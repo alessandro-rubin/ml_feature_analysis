@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ml_analysis"
+version = "0.0.1"
+description = "Modular polars-first toolkit for time-series anomaly-detection label analysis."
+requires-python = ">=3.11"
+readme = "PLAN.md"
+dependencies = [
+    "polars>=1.0",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+boosting = ["lightgbm>=4.0", "xgboost>=2.0"]
+clustering = ["hdbscan>=0.8", "umap-learn>=0.5"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+all = [
+    "lightgbm>=4.0",
+    "xgboost>=2.0",
+    "hdbscan>=0.8",
+    "umap-learn>=0.5",
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ml_analysis"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

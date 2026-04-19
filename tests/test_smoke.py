@@ -1,0 +1,12 @@
+def test_import():
+    import ml_analysis
+
+    assert ml_analysis.__version__
+
+
+def test_config_defaults():
+    from ml_analysis import Config
+
+    cfg = Config()
+    assert cfg.timestamp_col == "timestamp"
+    assert cfg.asset_dir("A1").as_posix() == "data/A1/input"
