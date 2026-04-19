@@ -101,8 +101,11 @@ def to_windowed(
         for agg_name in aggregators:
             agg_exprs.append(ar.get(agg_name).apply(src))
 
-    # carry label columns through (constant within an event); use .first()
-    label_exprs = [pl.col(c).first().alias(c) for c in label_cols]
+    group_by = [c for c in ("event_id",) if c in schema.names()] or None
+    grouped = set(group_by or ())
+
+    # carry remaining label columns through (constant within an event); use .first()
+    label_exprs = [pl.col(c).first().alias(c) for c in label_cols if c not in grouped]
 
     return (
         base.sort(cfg.timestamp_col)
@@ -110,7 +113,7 @@ def to_windowed(
             cfg.timestamp_col,
             every=every,
             period=period or every,
-            group_by=[c for c in ("event_id",) if c in schema.names()] or None,
+            group_by=group_by,
         )
         .agg(label_exprs + agg_exprs)
     )
