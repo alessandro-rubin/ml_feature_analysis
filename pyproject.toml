@@ -23,6 +23,10 @@ dependencies = [
 boosting = ["lightgbm>=4.0", "xgboost>=2.0"]
 clustering = ["hdbscan>=0.8", "umap-learn>=0.5"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
+ai = [
+    "anthropic>=0.50.0",
+    "mcp>=1.0.0",
+]
 all = [
     "lightgbm>=4.0",
     "xgboost>=2.0",
@@ -30,6 +34,8 @@ all = [
     "umap-learn>=0.5",
     "pytest>=8.0",
     "ruff>=0.5",
+    "anthropic>=0.50.0",
+    "mcp>=1.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
