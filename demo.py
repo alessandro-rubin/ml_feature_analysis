@@ -38,6 +38,7 @@ from ml_analysis.analysis import (
     PairwiseSeparability,
     Stratified,
     run_analyses,
+    ClusterAnalysis
 )
 from ml_analysis.dataset.builder import build
 from ml_analysis.features import builtins  # noqa: F401 – registers stock features/aggs
@@ -184,6 +185,16 @@ def print_distributions(result: dict) -> None:
     print(result["summary"].head(5)[["feature", "kw_stat", "kw_p"]].to_string(index=False))
 
 
+def print_clustering(result: dict) -> None:
+    _hr(f"Cluster Analysis  (best k = {result['best_k']})")
+    metrics = result["metrics"]
+    if metrics.empty:
+        print("  No clusters with >1 component were found.")
+        return
+    cols = ["Clusters", "Noise pts", "Silhouette", "ARI", "NMI", "V-measure"]
+    print(metrics[cols].round(3).to_string())
+
+
 def print_stratified(result: dict) -> None:
     _hr("Stratified Importance  (top feature per replacement_type stratum)")
     for stratum, r in result["per_stratum"].items():
@@ -279,7 +290,8 @@ def main() -> None:
             rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
             permutation_repeats=5,
         ),
-        ClassifierEvaluation(run_lgb=False, run_xgb=False),
+        ClusterAnalysis(),
+        ClassifierEvaluation(run_lgb=True, run_xgb=True),
         Stratified(
             inner=FeatureImportance(
                 name="importance_strat",
@@ -295,8 +307,10 @@ def main() -> None:
     print_distributions(results["distributions"])
     print_pairwise(results["pairwise"])
     print_importance(results["importance"])
+    print_clustering(results["clustering"])
     print_classifier(results["classifier"])
     print_stratified(results["stratified__importance_strat"])
+    
 
     save_summary_figure(
         importance_result=results["importance"],

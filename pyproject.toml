@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 boosting = ["lightgbm>=4.0", "xgboost>=2.0"]
 clustering = ["hdbscan>=0.8", "umap-learn>=0.5"]
+jupyter = ["jupyter"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 ai = [
     "anthropic>=0.50.0",
