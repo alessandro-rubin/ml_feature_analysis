@@ -25,7 +25,13 @@ class ExcelLabelSource:
     column_map: dict[str, str] = field(default_factory=dict)
 
     def load(self, cfg: Config) -> pl.DataFrame:
-        df = pl.read_excel(self.path, sheet_name=self.sheet)
+        # Polars splits sheet selection across two kwargs: `sheet_name` (str)
+        # and `sheet_id` (1-based int). Translate a 0-based int to keep the
+        # pandas-style contract advertised by callers.
+        if isinstance(self.sheet, int):
+            df = pl.read_excel(self.path, sheet_id=self.sheet + 1)
+        else:
+            df = pl.read_excel(self.path, sheet_name=self.sheet)
         if self.column_map:
             df = df.rename({k: v for k, v in self.column_map.items() if k in df.columns})
         return validate(df, cfg)

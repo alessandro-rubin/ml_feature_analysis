@@ -257,6 +257,10 @@ Required call order:
   3. materialize_period — always third; creates the feature matrix
   4. analysis tools — in whatever order makes sense for the goal
 
+Call tools ONE AT A TIME. Wait for each tool result before issuing the next
+call. Never invent a session_id — read it from the load_labels result and
+pass that exact string to every subsequent tool.
+
 Guidelines:
 - Start with load_labels → build_dataset → materialize_period before any analysis.
 - If the user mentions specific signals or aggregations, reflect them in materialize_period.

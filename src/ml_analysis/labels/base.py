@@ -33,6 +33,11 @@ def validate(labels: pl.DataFrame, cfg: Config) -> pl.DataFrame:
 
     out = labels
     for col in ("start", "end"):
-        if not out.schema[col].is_temporal():
+        dtype = out.schema[col]
+        if not dtype.is_temporal():
             out = out.with_columns(pl.col(col).str.to_datetime())
+        elif dtype != pl.Datetime:
+            # Date / Time / mixed-precision Datetime → unify to Datetime so
+            # downstream comparisons don't mix `date` and `datetime`.
+            out = out.with_columns(pl.col(col).cast(pl.Datetime))
     return out
