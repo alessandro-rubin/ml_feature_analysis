@@ -1,4 +1,17 @@
-"""Materialize a per-event LazyFrame into per-sample / windowed / period outputs."""
+"""Materialise per-event LazyFrames into per-sample, windowed, or period outputs.
+
+Three entry points form a coarse-to-fine spectrum:
+
+- :func:`to_per_sample` — adds registered features as new columns, one row
+  per input sample.
+- :func:`to_windowed` — groups each event into fixed time windows and
+  aggregates within each, returning N rows per event.
+- :func:`to_period` — collapses each event to a single row of summary
+  statistics over the full event duration.
+
+All three accept a feature registry and an aggregator registry; each falls
+back to the process-wide default registries when not specified.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +33,13 @@ from ml_analysis.features.registry import (
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _label_cols(lf: pl.LazyFrame, cfg: Config) -> list[str]:
-    """Columns that came from label metadata + ids (everything non-temporal/non-numeric typical)."""
+    """Return the columns that came from label metadata + ids.
+
+    Heuristic: known label/id columns (``event_id``, ``asset_id``,
+    ``cfg.class_col``) plus any other non-numeric, non-timestamp columns.
+    Used by the materialisers to know what to carry through aggregation
+    and what to exclude from automatic source selection.
+    """
     schema = lf.collect_schema()
     candidates = ["event_id", "asset_id", cfg.class_col]
     return [c for c in candidates if c in schema.names()] + [
@@ -35,6 +54,7 @@ def _resolve_features(
     feature_names: list[str] | None,
     registry: FeatureRegistry,
 ) -> list:
+    """Return registered specs for ``feature_names`` (or all if ``None``)."""
     if feature_names is None:
         return registry.resolve()
     return registry.resolve(feature_names)
@@ -48,7 +68,28 @@ def to_per_sample(
     feature_names: list[str] | None = None,
     registry: FeatureRegistry | None = None,
 ) -> pl.LazyFrame:
-    """Add registered features as columns. Lazy."""
+    """Add registered features as columns, leaving row count unchanged.
+
+    Parameters
+    ----------
+    lf : pl.LazyFrame
+        Input frame, typically one event from :func:`ml_analysis.dataset.builder.build`.
+    cfg : Config
+        Project configuration. Currently unused inside this function but
+        kept for signature symmetry with the other materialisers.
+    feature_names : list of str, optional
+        Subset of features to apply. If ``None`` (default), every feature
+        in ``registry`` is applied. Pass ``[]`` to skip features entirely.
+    registry : FeatureRegistry, optional
+        Registry to resolve features from. Defaults to the process-wide
+        registry.
+
+    Returns
+    -------
+    pl.LazyFrame
+        The input frame with one new column per applied feature, in
+        dependency order.
+    """
     reg = registry or default_features()
     specs = _resolve_features(feature_names, reg)
     out = lf
@@ -70,15 +111,47 @@ def to_windowed(
     feature_registry: FeatureRegistry | None = None,
     aggregator_registry: AggregatorRegistry | None = None,
 ) -> pl.LazyFrame:
-    """Group by fixed time windows; emit one row per window per event.
+    """Group each event into fixed time windows and aggregate within each.
+
+    Internally calls :func:`to_per_sample` to materialise features, then
+    Polars' ``group_by_dynamic`` over the timestamp column. When ``event_id``
+    is present, windows are computed *per event* so different events do not
+    bleed into each other.
 
     Parameters
     ----------
-    every : str       step between window starts (e.g. "1m", "1h").
-    period : str      window length; defaults to `every` (non-overlapping).
-    sources : list    columns to aggregate. Defaults to all numeric non-label cols
-                      after feature materialization.
-    aggregators : list   names of aggregators to apply (default: ["mean", "std"]).
+    lf : pl.LazyFrame
+        Input frame, typically one event from :func:`ml_analysis.dataset.builder.build`.
+    cfg : Config
+        Project configuration. ``cfg.timestamp_col`` is used as the
+        time axis.
+    every : str
+        Step between window starts, in Polars duration syntax (``"1m"``,
+        ``"1h"``, ``"500ms"``...).
+    period : str, optional
+        Window length. Defaults to ``every``, producing non-overlapping
+        tumbling windows. Set ``period > every`` for sliding/overlapping
+        windows.
+    sources : list of str, optional
+        Columns to aggregate. Defaults to all numeric columns that aren't
+        the timestamp or a label column, after feature materialisation.
+    aggregators : list of str, optional
+        Names of aggregators to apply (looked up in ``aggregator_registry``).
+        Defaults to ``["mean", "std"]``.
+    feature_names : list of str, optional
+        Subset of features to materialise before aggregating. ``None``
+        applies all registered features; ``[]`` skips them.
+    feature_registry : FeatureRegistry, optional
+        Source of feature specs. Defaults to the process-wide registry.
+    aggregator_registry : AggregatorRegistry, optional
+        Source of aggregator specs. Defaults to the process-wide registry.
+
+    Returns
+    -------
+    pl.LazyFrame
+        One row per ``(event_id, window)``. Numeric output columns are
+        named ``"<source>__<aggregator>"``; label columns are carried
+        through unchanged via ``.first()``.
     """
     fr = feature_registry or default_features()
     ar = aggregator_registry or default_aggs()
@@ -130,10 +203,41 @@ def to_period(
     feature_registry: FeatureRegistry | None = None,
     aggregator_registry: AggregatorRegistry | None = None,
 ) -> pl.DataFrame:
-    """One row per event: the aggregate of every source over the full event.
+    """Collapse each event to a single row of summary statistics.
 
-    Accepts a single LazyFrame (one event), an iterable of them, or the dict
-    returned by `dataset.build`.
+    Equivalent to :func:`to_windowed` with ``period`` equal to the full
+    event duration and no time grouping — i.e. one row per input event.
+    Unlike :func:`to_windowed`, this function eagerly collects.
+
+    Parameters
+    ----------
+    lfs : dict, iterable, or pl.LazyFrame
+        Either a single event LazyFrame, an iterable of them, or the
+        ``{event_id: LazyFrame}`` dict returned by
+        :func:`ml_analysis.dataset.builder.build`.
+    cfg : Config
+        Project configuration; ``cfg.timestamp_col`` is excluded from
+        automatic source selection.
+    sources : list of str, optional
+        Columns to aggregate. Defaults to all numeric columns that aren't
+        the timestamp or a label column, after feature materialisation.
+    aggregators : list of str, optional
+        Names of aggregators to apply. Defaults to
+        ``["mean", "std", "min", "max"]``.
+    feature_names : list of str, optional
+        Subset of features to materialise before aggregating. ``None``
+        applies all registered features; ``[]`` skips them.
+    feature_registry : FeatureRegistry, optional
+        Source of feature specs. Defaults to the process-wide registry.
+    aggregator_registry : AggregatorRegistry, optional
+        Source of aggregator specs. Defaults to the process-wide registry.
+
+    Returns
+    -------
+    pl.DataFrame
+        One row per input event, with columns
+        ``"<source>__<aggregator>"`` plus any label columns.
+        Returns an empty :class:`pl.DataFrame` if ``lfs`` is empty.
     """
     fr = feature_registry or default_features()
     ar = aggregator_registry or default_aggs()

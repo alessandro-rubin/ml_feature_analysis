@@ -48,7 +48,7 @@ from ml_analysis.features.builtins import (
     make_rolling_std,
     make_zscore,
 )
-from ml_analysis.features.materialize import to_period
+from ml_analysis.features.materialize import to_period,to_per_sample,to_windowed
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 

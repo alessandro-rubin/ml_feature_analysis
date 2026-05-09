@@ -18,6 +18,20 @@ from ml_analysis.features.registry import feature
 
 
 def make_rolling_mean(source: str, window: int) -> None:
+    """Register a rolling-mean feature for ``source``.
+
+    Parameters
+    ----------
+    source : str
+        Name of the input column.
+    window : int
+        Rolling-window size in samples.
+
+    Notes
+    -----
+    The new feature is registered as ``"<source>__roll_mean_<window>"`` in
+    the default feature registry.
+    """
     name = f"{source}__roll_mean_{window}"
 
     @feature(name, deps=(source,))
@@ -26,6 +40,20 @@ def make_rolling_mean(source: str, window: int) -> None:
 
 
 def make_rolling_std(source: str, window: int) -> None:
+    """Register a rolling-std feature for ``source``.
+
+    Parameters
+    ----------
+    source : str
+        Name of the input column.
+    window : int
+        Rolling-window size in samples.
+
+    Notes
+    -----
+    The new feature is registered as ``"<source>__roll_std_<window>"`` in
+    the default feature registry.
+    """
     name = f"{source}__roll_std_{window}"
 
     @feature(name, deps=(source,))
@@ -34,6 +62,19 @@ def make_rolling_std(source: str, window: int) -> None:
 
 
 def make_first_difference(source: str) -> None:
+    """Register a first-difference feature for ``source``.
+
+    Parameters
+    ----------
+    source : str
+        Name of the input column.
+
+    Notes
+    -----
+    The new feature is registered as ``"<source>__diff1"`` in the default
+    feature registry. The first sample of each event is null because there
+    is no prior value to subtract.
+    """
     name = f"{source}__diff1"
 
     @feature(name, deps=(source,))
@@ -42,7 +83,23 @@ def make_first_difference(source: str) -> None:
 
 
 def make_zscore(source: str, window: int) -> None:
-    """Rolling z-score using rolling mean/std of the same window."""
+    """Register a rolling z-score feature for ``source``.
+
+    The z-score is computed as ``(x - rolling_mean) / rolling_std``, both
+    over the same window.
+
+    Parameters
+    ----------
+    source : str
+        Name of the input column.
+    window : int
+        Rolling-window size in samples used for both mean and std.
+
+    Notes
+    -----
+    The new feature is registered as ``"<source>__zscore_<window>"`` in the
+    default feature registry.
+    """
     name = f"{source}__zscore_{window}"
 
     @feature(name, deps=(source,))
