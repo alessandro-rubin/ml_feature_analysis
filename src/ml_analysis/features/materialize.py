@@ -41,7 +41,7 @@ def _label_cols(lf: pl.LazyFrame, cfg: Config) -> list[str]:
     and what to exclude from automatic source selection.
     """
     schema = lf.collect_schema()
-    candidates = ["event_id", "asset_id", cfg.class_col]
+    candidates = ["event_id", cfg.asset_col, cfg.class_col]
     return [c for c in candidates if c in schema.names()] + [
         c for c in schema.names()
         if c not in candidates
@@ -66,7 +66,7 @@ def to_per_sample(
     lf: pl.LazyFrame,
     cfg: Config,
     feature_names: list[str] | None = None,
-    registry: FeatureRegistry | None = None,
+    feature_registry: FeatureRegistry | None = None,
 ) -> pl.LazyFrame:
     """Add registered features as columns, leaving row count unchanged.
 
@@ -79,8 +79,8 @@ def to_per_sample(
         kept for signature symmetry with the other materialisers.
     feature_names : list of str, optional
         Subset of features to apply. If ``None`` (default), every feature
-        in ``registry`` is applied. Pass ``[]`` to skip features entirely.
-    registry : FeatureRegistry, optional
+        in ``feature_registry`` is applied. Pass ``[]`` to skip features entirely.
+    feature_registry : FeatureRegistry, optional
         Registry to resolve features from. Defaults to the process-wide
         registry.
 
@@ -90,7 +90,7 @@ def to_per_sample(
         The input frame with one new column per applied feature, in
         dependency order.
     """
-    reg = registry or default_features()
+    reg = feature_registry or default_features()
     specs = _resolve_features(feature_names, reg)
     out = lf
     for spec in specs:
