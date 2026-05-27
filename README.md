@@ -107,6 +107,19 @@ period = to_period(events, feature_specs=[...], agg_specs=[...])
 
 See `tests/` for runnable end-to-end examples on synthetic data.
 
+## Statistical tests and corroboration
+
+The analyses ship with a layered statistical-testing toolkit: multiple-
+testing correction (Bonferroni / Holm / BH-FDR), effect sizes
+(Cohen's d, Hedges' g, Cliff's delta, Wasserstein, Jensen-Shannon),
+bootstrap CIs, cross-validated classifier metrics
+(MCC / balanced accuracy / Brier / ECE), importance stability
+(bootstrap CIs + Spearman method agreement), and cluster validation
+(Hopkins statistic + permutation p-values for ARI / V-measure).
+
+See [STATISTICAL_TESTS.md](STATISTICAL_TESTS.md) for what each test
+does, when to use it, and how to interpret the output.
+
 ## Status
 
 Phases 0-6 of [PLAN.md](PLAN.md) have landed:
