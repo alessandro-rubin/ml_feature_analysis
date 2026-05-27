@@ -51,7 +51,7 @@ def _registries() -> tuple[FeatureRegistry, AggregatorRegistry]:
 def test_per_sample_adds_column():
     cfg = Config()
     fr, _ = _registries()
-    out = to_per_sample(_toy_lf(), cfg, ["x_double"], registry=fr).collect()
+    out = to_per_sample(_toy_lf(), cfg, ["x_double"], feature_registry=fr).collect()
     assert "x_double" in out.columns
     assert out["x_double"].to_list() == [i * 2 for i in range(60)]
 
