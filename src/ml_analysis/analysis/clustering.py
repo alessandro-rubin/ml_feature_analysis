@@ -130,4 +130,7 @@ class ClusterAnalysis:
             "reductions": reductions,
             "metrics": metrics,
             "class_names": prep.class_names,
+            # encoded true labels aligned row-for-row with every array in
+            # `labels` / `reductions` (post null-drop, same order as prepare_xy).
+            "y_true": y,
         }

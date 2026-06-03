@@ -1,6 +1,8 @@
 from ml_analysis.io.stat_plots import (
     auc_bootstrap_plot,
     calibration_plot,
+    cluster_class_heatmap,
+    cluster_class_heatmap_panel,
     cv_metric_boxplot,
     diagnostics_panel,
     importance_stability_plot,
@@ -20,5 +22,7 @@ __all__ = [
     "cv_metric_boxplot",
     "calibration_plot",
     "permutation_null_plot",
+    "cluster_class_heatmap",
+    "cluster_class_heatmap_panel",
     "diagnostics_panel",
 ]

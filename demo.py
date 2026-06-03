@@ -55,6 +55,7 @@ from ml_analysis.features.materialize import to_period, to_per_sample, to_window
 from ml_analysis.io.stat_plots import (
     auc_bootstrap_plot,
     calibration_plot,
+    cluster_class_heatmap_panel,
     cv_metric_boxplot,
     diagnostics_panel,
     importance_stability_plot,
@@ -310,6 +311,27 @@ def save_summary_figure(
     return path
 
 
+def save_cluster_heatmap_figure(
+    clustering_result: dict,
+    output_dir: Path,
+) -> Path | None:
+    """Heatmap of how each algorithm's clusters distribute over the true classes."""
+    labels = clustering_result.get("labels")
+    if not labels:
+        return None
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fig = cluster_class_heatmap_panel(
+        labels,
+        clustering_result["y_true"],
+        clustering_result["class_names"],
+    )
+    path = output_dir / "demo_cluster_class_heatmap.png"
+    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Figure saved → {path}")
+    return path
+
+
 def save_diagnostics_figures(
     pairwise_result: dict,
     stability_result: dict,
@@ -515,6 +537,7 @@ def main() -> None:
         distributions_result=results["distributions"],
         output_dir=OUTPUT_DIR,
     )
+    save_cluster_heatmap_figure(results["clustering"], OUTPUT_DIR)
     save_diagnostics_figures(
         pairwise_result=results["pairwise"],
         stability_result=results["importance_stability"],

@@ -280,6 +280,127 @@ def permutation_null_plot(
     return fig
 
 
+def cluster_class_heatmap(
+    labels: np.ndarray,
+    y_true: np.ndarray,
+    class_names: list[str],
+    normalize: str = "cluster",
+    title: str = "",
+    cmap: str = "Blues",
+    ax: plt.Axes | None = None,
+) -> plt.Figure:
+    """Contingency heatmap of cluster IDs (rows) vs true classes (columns).
+
+    Colour encodes the normalised fraction; each cell's text is the raw
+    count. ``normalize`` selects the denominator:
+
+    - ``"cluster"`` (row): fraction of each cluster falling in each class —
+      answers *"what is this cluster made of?"* (the default).
+    - ``"class"`` (column): fraction of each class captured by each cluster —
+      answers *"where did this class end up?"*.
+    - ``"none"``: colour encodes the raw counts directly.
+
+    Noise points (label ``-1`` from DBSCAN / HDBSCAN) are dropped, matching
+    the alignment metrics in ``ClusterAnalysis``. ``labels`` and ``y_true``
+    are the same-length arrays carried in the ``clustering`` result
+    (``labels[algo]`` and ``y_true``).
+    """
+    labels = np.asarray(labels)
+    y_true = np.asarray(y_true)
+    keep = labels != -1
+    lab = labels[keep]
+    yt = y_true[keep]
+    cluster_ids = sorted(set(lab.tolist()))
+
+    if ax is None:
+        w = max(3.5, 1.1 * len(class_names) + 2.0)
+        h = max(2.5, 0.55 * max(len(cluster_ids), 1) + 1.5)
+        fig, ax = plt.subplots(figsize=(w, h))
+    else:
+        fig = ax.figure
+
+    if not cluster_ids:
+        ax.text(0.5, 0.5, "no non-noise clusters",
+                ha="center", va="center", transform=ax.transAxes)
+        ax.set_title(title or "Cluster vs true class")
+        return fig
+
+    n_classes = len(class_names)
+    counts = np.zeros((len(cluster_ids), n_classes), dtype=int)
+    for r, cl in enumerate(cluster_ids):
+        row = lab == cl
+        for ci in range(n_classes):
+            counts[r, ci] = int(np.sum(row & (yt == ci)))
+
+    if normalize == "cluster":
+        denom = counts.sum(axis=1, keepdims=True)
+        color = np.divide(counts, denom, out=np.zeros(counts.shape), where=denom > 0)
+        vmin, vmax, cbar_label = 0.0, 1.0, "Fraction of cluster"
+    elif normalize == "class":
+        denom = counts.sum(axis=0, keepdims=True)
+        color = np.divide(counts, denom, out=np.zeros(counts.shape), where=denom > 0)
+        vmin, vmax, cbar_label = 0.0, 1.0, "Fraction of class"
+    else:
+        color = counts.astype(float)
+        vmin, vmax, cbar_label = 0.0, float(color.max() or 1.0), "Count"
+
+    im = ax.imshow(color, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+    ax.set_xticks(range(n_classes))
+    ax.set_xticklabels(class_names, rotation=30, ha="right", fontsize=8)
+    ax.set_yticks(range(len(cluster_ids)))
+    ax.set_yticklabels([f"Cluster {c}" for c in cluster_ids], fontsize=8)
+    ax.set_xlabel("True class")
+    ax.set_ylabel("Cluster")
+
+    shade = color / vmax if vmax else color
+    for r in range(len(cluster_ids)):
+        for c in range(n_classes):
+            ax.text(c, r, str(counts[r, c]), ha="center", va="center",
+                    fontsize=8, color="white" if shade[r, c] > 0.5 else "black")
+
+    fig.colorbar(im, ax=ax, label=cbar_label)
+    ax.set_title(title or "Cluster vs true class")
+    return fig
+
+
+def cluster_class_heatmap_panel(
+    all_labels: dict[str, np.ndarray],
+    y_true: np.ndarray,
+    class_names: list[str],
+    normalize: str = "cluster",
+    figsize: tuple[float, float] | None = None,
+) -> plt.Figure:
+    """One :func:`cluster_class_heatmap` per clustering algorithm.
+
+    ``all_labels`` is the ``labels`` dict from ``ClusterAnalysis`` (algorithm
+    name → label array); ``y_true`` and ``class_names`` are the companion
+    entries in the same result. Shows at a glance whether each algorithm's
+    clusters line up with the supervised classes.
+    """
+    n = max(len(all_labels), 1)
+    if figsize is None:
+        per = max(4.5, 1.1 * len(class_names) + 2.5)
+        figsize = (per * n, 5.0)
+    fig, axes = plt.subplots(1, n, figsize=figsize, squeeze=False)
+
+    if not all_labels:
+        axes[0, 0].text(0.5, 0.5, "no clusterings to plot",
+                        ha="center", va="center", transform=axes[0, 0].transAxes)
+        return fig
+
+    for ax, (name, lab) in zip(axes[0], all_labels.items()):
+        cluster_class_heatmap(
+            lab, y_true, class_names, normalize=normalize, title=name, ax=ax,
+        )
+
+    fig.suptitle(
+        "Cluster composition by true class  (colour = fraction, text = count)",
+        fontsize=12, fontweight="bold",
+    )
+    fig.tight_layout()
+    return fig
+
+
 def diagnostics_panel(
     pair_table: pd.DataFrame | None = None,
     pair_label: str = "",
@@ -322,5 +443,7 @@ __all__: list[str] = [
     "cv_metric_boxplot",
     "calibration_plot",
     "permutation_null_plot",
+    "cluster_class_heatmap",
+    "cluster_class_heatmap_panel",
     "diagnostics_panel",
 ]
