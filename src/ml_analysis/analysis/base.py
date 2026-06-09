@@ -130,6 +130,7 @@ class PreparedXY:
     encoder: LabelEncoder | None
     report: PreparationReport | None = None
     ids: pd.DataFrame | None = None  # event_id / asset_id rows aligned to X
+    row_index: np.ndarray | None = None  # positions in the filtered frame
 
 
 def prepare_xy(
@@ -203,7 +204,9 @@ def prepare_xy(
 
     row_mask = X.notna().all(axis=1)
     n_null_rows = int((~row_mask).sum())
-    X = X[row_mask].reset_index(drop=True)
+    X = X[row_mask]
+    row_index = X.index.to_numpy()
+    X = X.reset_index(drop=True)
     if y_raw is not None:
         y_raw = y_raw[row_mask].reset_index(drop=True)
     if ids is not None:
@@ -242,6 +245,7 @@ def prepare_xy(
         encoder=enc,
         report=report,
         ids=ids,
+        row_index=row_index,
     )
     ctx._xy_cache[cache_key] = prep
     return prep

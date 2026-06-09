@@ -16,7 +16,7 @@ for the evolution"). Each step lists what changed and **what was checked**
   ensemble + separability permutation test.
 - [x] **Step 4** — `Dataset`/`WindowSpec` facade + typed `Result` objects +
   `ResultStore` with run manifest + notebook-first `Run` facade.
-- [ ] **Step 5** — Semi-supervised (label spreading, PU), changepoint,
+- [x] **Step 5** — Semi-supervised (label spreading, PU), changepoint,
   correlation structure; static HTML report + dashboard.
 - [ ] **Step 6** — Relations family (lagged relations, MI network);
   housekeeping (delete `legacy/`, readme pin, CI, CHANGELOG, unused imports).
@@ -174,3 +174,53 @@ Checked:
   for a supervised analysis.
 - [x] Full suite green: **76 passed** (67 + 9 new in
   `tests/test_step4_facade.py`).
+
+### Step 5
+
+Changes:
+- `analysis/semi.py` (new): `LabelSpreadingAnalysis` (kNN-graph label
+  propagation; predicted label + confidence for every row incl. unlabeled)
+  and `PULearningAnalysis` (Mordelet–Vert bagging PU: positives vs random
+  unlabeled subsamples, out-of-bag mean score, ranked unlabeled table).
+  Both `needs_labels="partial"`; `PreparedXY.row_index` added so sparse
+  labels align to X after null handling.
+- `analysis/changepoint.py` (new): two-sided CUSUM per (asset, channel)
+  with robust standardization — location from baseline median, **scale
+  from successive differences** (shift-robust); refractory period after
+  each detection; threshold default Monte-Carlo calibrated.
+- `analysis/correlation.py` (new): `CorrelationStructure` — |Spearman|
+  matrix, average-linkage clusters (distance 1−|rho|), near-duplicate
+  pairs, suggested keep/drop set.
+- `results/report.py` (new): self-contained static HTML report (manifest
+  header, scalars, capped tables, base64-embedded histograms for 1-D
+  arrays); `Run.report(path)` and `render_html` over loaded stores.
+- `dashboard/app.py` (new): Streamlit run browser over `ResultStore`
+  (read-only — never recomputes); `dashboard` optional extra
+  (`streamlit>=1.30`) added to `pyproject.toml`.
+- All four analyses registered in `Run` (`label_spreading`, `pu_learning`,
+  `changepoint`, `correlation_structure`).
+
+Checked (note: three step-5 bugs were caught by the new tests and fixed):
+- [x] Label spreading recovers masked labels with >90% accuracy when only
+  16/120 rows are labeled; properly skipped when no target column exists.
+- [x] PU learning: hidden positives dominate the top of the ranking
+  (top-20 >80% fault, bottom-20 <20%); missing `positive_label` raises.
+- [x] **CUSUM bug found & fixed:** baseline-window MAD underestimated the
+  noise scale (std of standardized series 1.23) causing false alarms →
+  scale now comes from successive differences. **Threshold calibrated by
+  Monte Carlo** (300 seeds): h=5 → constant false alarms, h=8 → 15%,
+  h=12 → 2% false alarms with 99.3% detection of 4σ shifts at ~3-sample
+  delay; default set to 12. Detector finds an injected shift within
+  samples 295–320 of the true position 300 and raises no alarm on the
+  pure-noise asset.
+- [x] **pandas copy-on-write bug found & fixed:** `np.fill_diagonal` on a
+  read-only `.values` view → explicit `to_numpy(copy=True)`.
+- [x] Correlation structure: near-duplicate channel pair lands in one
+  cluster, independent channel in another; duplicate pair reported first.
+- [x] HTML report contains all run sections, scalars, and an embedded
+  base64 PNG histogram; renders identically from live results and from a
+  reloaded `ResultStore` run.
+- [x] Dashboard app compiles (UI not exercised in CI; it is a read-only
+  viewer over the store tested above).
+- [x] Full suite green: **85 passed** (76 + 9 new in
+  `tests/test_step5_semi_and_report.py`).

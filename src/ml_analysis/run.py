@@ -24,6 +24,10 @@ import polars as pl
 from ml_analysis.analysis import (
     AnalysisContext,
     AnomalyDetection,
+    ChangepointDetection,
+    CorrelationStructure,
+    LabelSpreadingAnalysis,
+    PULearningAnalysis,
     ClassifierEvaluation,
     ClusterAnalysis,
     ClusterValidation,
@@ -50,6 +54,10 @@ _ANALYSES = {
     "importance_stability": ImportanceStability,
     "separability": SeparabilityTest,
     "anomaly": AnomalyDetection,
+    "label_spreading": LabelSpreadingAnalysis,
+    "pu_learning": PULearningAnalysis,
+    "changepoint": ChangepointDetection,
+    "correlation_structure": CorrelationStructure,
 }
 
 
@@ -131,6 +139,18 @@ class Run:
     def anomaly(self, **kw) -> AnalysisResult:
         return self.run("anomaly", **kw)
 
+    def label_spreading(self, **kw) -> AnalysisResult:
+        return self.run("label_spreading", **kw)
+
+    def pu_learning(self, **kw) -> AnalysisResult:
+        return self.run("pu_learning", **kw)
+
+    def changepoint(self, **kw) -> AnalysisResult:
+        return self.run("changepoint", **kw)
+
+    def correlation_structure(self, **kw) -> AnalysisResult:
+        return self.run("correlation_structure", **kw)
+
     # ── persistence ─────────────────────────────────────────────────────────
 
     def save(self, store: ResultStore | str | Path, name: str | None = None) -> Path:
@@ -144,6 +164,13 @@ class Run:
             name=name,
             extra_manifest={"target_col": self.ctx.target_col},
         )
+
+    def report(self, path: str | Path, title: str = "ml_analysis run report") -> Path:
+        """Write a self-contained static HTML report of everything computed."""
+        from ml_analysis.results.report import write_report
+
+        manifest = {"target_col": self.ctx.target_col}
+        return write_report(path, self.ctx.results, manifest, title)
 
     def summary(self) -> str:
         """Digest of every analysis computed so far."""
