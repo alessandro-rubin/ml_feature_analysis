@@ -50,12 +50,18 @@ class ClusterAnalysis:
 
     def _best_k(self, X: np.ndarray, random_state: int) -> tuple[int, list, list]:
         ks = list(range(*self.k_range))
+        if not ks:
+            raise ValueError(f"Empty k_range: {self.k_range}")
         inertias, sils = [], []
         for k in ks:
             km = KMeans(n_clusters=k, random_state=random_state, n_init="auto")
             lbl = km.fit_predict(X)
             inertias.append(km.inertia_)
             sils.append(silhouette_score(X, lbl))
+        if len(ks) < 3:
+            # The elbow needs a second difference (>= 3 points); fall back
+            # to the silhouette winner.
+            return ks[int(np.argmax(sils))], inertias, sils
         diffs2 = np.diff(np.diff(inertias))
         elbow_k = ks[np.argmax(diffs2) + 1]
         sil_k = ks[int(np.argmax(sils))]

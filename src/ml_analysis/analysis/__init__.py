@@ -2,9 +2,12 @@ from ml_analysis.analysis.base import (
     Analysis,
     AnalysisContext,
     LabelFilter,
+    NullPolicy,
+    PreparationReport,
     PreparedXY,
     prepare_xy,
     run_analyses,
+    seeded,
 )
 from ml_analysis.analysis.classifier import ClassifierEvaluation
 from ml_analysis.analysis.cluster_validation import ClusterValidation
@@ -20,9 +23,12 @@ __all__ = [
     "Analysis",
     "AnalysisContext",
     "LabelFilter",
+    "NullPolicy",
+    "PreparationReport",
     "PreparedXY",
     "prepare_xy",
     "run_analyses",
+    "seeded",
     "FeatureImportance",
     "ClusterAnalysis",
     "ClassifierEvaluation",

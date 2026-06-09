@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 
-from ml_analysis.analysis.base import AnalysisContext, prepare_xy
+from ml_analysis.analysis.base import AnalysisContext, prepare_xy, seeded
 
 try:
     import lightgbm as lgb
@@ -37,30 +37,30 @@ class ClassifierEvaluation:
     run_xgb: bool = True
     rf_params: dict = field(
         default_factory=lambda: dict(
-            n_estimators=300, max_depth=None, n_jobs=-1, random_state=42
+            n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
         )
     )
     lgb_params: dict = field(
         default_factory=lambda: dict(
             n_estimators=500, learning_rate=0.05, num_leaves=63,
-            n_jobs=-1, random_state=42, verbose=-1,
+            n_jobs=-1, random_state=None, verbose=-1,
         )
     )
     xgb_params: dict = field(
         default_factory=lambda: dict(
             n_estimators=500, learning_rate=0.05, max_depth=6,
-            tree_method="hist", random_state=42, verbosity=0, eval_metric="mlogloss",
+            tree_method="hist", random_state=None, verbosity=0, eval_metric="mlogloss",
         )
     )
 
-    def _models(self) -> dict:
+    def _models(self, cfg) -> dict:
         m = {}
         if self.run_rf:
-            m["Random Forest"] = RandomForestClassifier(**self.rf_params)
+            m["Random Forest"] = RandomForestClassifier(**seeded(self.rf_params, cfg))
         if self.run_lgb and HAS_LGB:
-            m["LightGBM"] = lgb.LGBMClassifier(**self.lgb_params)
+            m["LightGBM"] = lgb.LGBMClassifier(**seeded(self.lgb_params, cfg))
         if self.run_xgb and HAS_XGB:
-            m["XGBoost"] = xgb.XGBClassifier(**self.xgb_params)
+            m["XGBoost"] = xgb.XGBClassifier(**seeded(self.xgb_params, cfg))
         if not m:
             raise RuntimeError("No classifiers available — check installs / flags.")
         return m
@@ -78,7 +78,7 @@ class ClassifierEvaluation:
         )
 
         per_model = {}
-        for name, model in self._models().items():
+        for name, model in self._models(ctx.cfg).items():
             model.fit(X_tr, y_tr)
             preds = model.predict(X_te)
             cm = confusion_matrix(y_te, preds)
