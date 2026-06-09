@@ -24,11 +24,13 @@ from ml_analysis.features.registry import default_registry as feat_registry
 from ml_analysis.features.aggregates import default_registry as agg_registry
 from ml_analysis.features.materialize import to_period
 from ml_analysis.analysis import (
-    FeatureImportance,
+    AnalysisContext,
+    AnomalyDetection,
     ClassifierEvaluation,
     DistributionAnalysis,
+    FeatureImportance,
     PairwiseSeparability,
-    AnalysisContext,
+    SeparabilityTest,
 )
 
 mcp = FastMCP("ml-feature-analysis")
@@ -275,6 +277,69 @@ def run_distribution_analysis(
         "session_id": session_id,
         "n_features": len(summary_df),
         "summary": _records(summary_df),
+    }
+
+
+@mcp.tool()
+def run_separability_test(
+    session_id: str,
+    label_filter: dict | None = None,
+    n_permutations: int = 200,
+) -> dict:
+    """
+    Test whether the classes are distinguishable AT ALL: cross-validated
+    balanced accuracy compared against a label-permutation null distribution.
+    Returns the observed score, chance level, permutation p-value, and a
+    plain verdict ("separable" / "not separable").
+    """
+    ctx = _build_ctx(session_id, label_filter)
+    result = SeparabilityTest(n_permutations=n_permutations).run(ctx)
+    summary = result["summary"].iloc[0].to_dict()
+    return {
+        "session_id": session_id,
+        "class_names": result["class_names"],
+        **{k: (round(float(v), 4) if isinstance(v, float) else v)
+           for k, v in summary.items()},
+    }
+
+
+@mcp.tool()
+def run_anomaly_detection(
+    session_id: str,
+    baseline_filter: dict | None = None,
+    label_filter: dict | None = None,
+    top_n: int = 20,
+) -> dict:
+    """
+    Unsupervised anomaly scoring (IsolationForest + LOF + robust Mahalanobis
+    ensemble) over the period-aggregate rows — no labels required.
+    baseline_filter: e.g. {"class": ["healthy"]} fits the detectors on those
+    rows only, scoring everything against the healthy baseline.
+    Returns the top_n most anomalous events with their ensemble score and the
+    top contributing feature (robust z-score vs the baseline).
+    """
+    ctx = _build_ctx(session_id, label_filter)
+    result = AnomalyDetection(baseline_filter=baseline_filter).run(ctx)
+    scores: pd.DataFrame = result["scores"]
+    contributors = result["top_contributors"]
+    order = scores["ensemble"].nlargest(top_n).index
+    top = []
+    for i in order:
+        row = scores.loc[i]
+        feat, z = contributors[i][0]
+        top.append({
+            "event_id": row.get("event_id"),
+            "asset_id": row.get("asset_id"),
+            "ensemble_score": round(float(row["ensemble"]), 4),
+            "top_feature": feat,
+            "top_feature_z": round(float(z), 2),
+        })
+    return {
+        "session_id": session_id,
+        "n_rows_scored": len(scores),
+        "methods": [c for c in scores.columns
+                    if c not in ("event_id", "asset_id")],
+        "top_anomalies": top,
     }
 
 
