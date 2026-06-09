@@ -9,7 +9,6 @@ reports, and headless demo scripts alike.
 
 from __future__ import annotations
 
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -142,8 +141,8 @@ def importance_stability_plot(
 
     stab_cols = [c for c in sub.columns if c.startswith("stability_top")]
     stab = sub[stab_cols[0]].values if stab_cols else np.ones(len(sub))
-    bars = ax.barh(y, med, color=plt.cm.viridis(stab), alpha=0.85,
-                   edgecolor="black", linewidth=0.5)
+    ax.barh(y, med, color=plt.cm.viridis(stab), alpha=0.85,
+            edgecolor="black", linewidth=0.5)
     ax.errorbar(med, y, xerr=err, fmt="none", ecolor="black", capsize=3, lw=1)
 
     ax.set_yticks(y)

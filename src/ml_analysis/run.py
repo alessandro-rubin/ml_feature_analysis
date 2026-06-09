@@ -27,6 +27,7 @@ from ml_analysis.analysis import (
     ChangepointDetection,
     CorrelationStructure,
     LabelSpreadingAnalysis,
+    LaggedRelations,
     PULearningAnalysis,
     ClassifierEvaluation,
     ClusterAnalysis,
@@ -36,6 +37,7 @@ from ml_analysis.analysis import (
     FeatureImportance,
     ImportanceStability,
     NullPolicy,
+    MutualInfoNetwork,
     PairwiseSeparability,
     SeparabilityTest,
     run_analyses,
@@ -58,6 +60,8 @@ _ANALYSES = {
     "pu_learning": PULearningAnalysis,
     "changepoint": ChangepointDetection,
     "correlation_structure": CorrelationStructure,
+    "lagged_relations": LaggedRelations,
+    "mi_network": MutualInfoNetwork,
 }
 
 
@@ -150,6 +154,12 @@ class Run:
 
     def correlation_structure(self, **kw) -> AnalysisResult:
         return self.run("correlation_structure", **kw)
+
+    def lagged_relations(self, **kw) -> AnalysisResult:
+        return self.run("lagged_relations", **kw)
+
+    def mi_network(self, **kw) -> AnalysisResult:
+        return self.run("mi_network", **kw)
 
     # ── persistence ─────────────────────────────────────────────────────────
 

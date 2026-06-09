@@ -53,14 +53,10 @@ from ml_analysis.features.builtins import (
 )
 from ml_analysis.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
 from ml_analysis.io.stat_plots import (
-    auc_bootstrap_plot,
     calibration_plot,
     cluster_class_heatmap_panel,
-    cv_metric_boxplot,
     diagnostics_panel,
-    importance_stability_plot,
     method_agreement_heatmap,
-    volcano_plot,
 )
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -356,14 +352,18 @@ def save_diagnostics_figures(
         cv_per_fold=cv_result["per_fold"],
     )
     p = output_dir / "demo_diagnostics_panel.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); saved.append(p)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    saved.append(p)
 
     # 2) Method-agreement heatmap (separate — needs its own colorbar)
     agree = stability_result["method_agreement"]
     if not agree.empty:
         fig = method_agreement_heatmap(agree)
         p = output_dir / "demo_method_agreement.png"
-        fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); saved.append(p)
+        fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    saved.append(p)
 
     # 3) Calibration curve (binary: TP-vs-FP subset)
     proba = cv_result.get("oof_proba")
@@ -420,7 +420,8 @@ def save_permutation_null_figure(
         p_value=float(summary["ari_perm_p"]), statistic_name="ARI",
     )
     p = output_dir / "demo_permutation_null_ari.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
     print(f"  Figure saved → {p}")
     return p
 
@@ -438,7 +439,8 @@ def save_calibration_figure(
     prep = prepare_xy(ctx)
     fig = calibration_plot(prep.y, proba[:, 1], n_bins=10)
     p = output_dir / "demo_calibration.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
     print(f"  Figure saved → {p}")
     return p
 

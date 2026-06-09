@@ -18,8 +18,11 @@ for the evolution"). Each step lists what changed and **what was checked**
   `ResultStore` with run manifest + notebook-first `Run` facade.
 - [x] **Step 5** — Semi-supervised (label spreading, PU), changepoint,
   correlation structure; static HTML report + dashboard.
-- [ ] **Step 6** — Relations family (lagged relations, MI network);
+- [x] **Step 6** — Relations family (lagged relations, MI network);
   housekeeping (delete `legacy/`, readme pin, CI, CHANGELOG, unused imports).
+
+**Queue complete.** Final state: **90 tests passing** (45 baseline → 90),
+`ruff check` clean, CI workflow in place.
 
 ## Checked
 
@@ -224,3 +227,37 @@ Checked (note: three step-5 bugs were caught by the new tests and fixed):
   viewer over the store tested above).
 - [x] Full suite green: **85 passed** (76 + 9 new in
   `tests/test_step5_semi_and_report.py`).
+
+### Step 6
+
+Changes:
+- `analysis/relations.py` (new): `LaggedRelations` — Pearson correlation
+  over a lag grid per channel pair (or against one `reference` channel),
+  best-lag table, guard against pair explosion at ~100 channels; and
+  `MutualInfoNetwork` — symmetrized kNN MI matrix + edge list, feature
+  count capped by variance (MI is O(p²)). Both carry an explicit
+  "association, not causation" note in their outputs; both registered in
+  `Run` (`lagged_relations`, `mi_network`).
+- `distributions.py`: Anderson–Darling capped/floored p-values (scipy
+  caps to [0.001, 0.25]) now surfaced as an `ad_p_capped` column and the
+  expected scipy warning suppressed (audit §4).
+- Housekeeping: deleted `src/ml_analysis/legacy/` (786 lines, no
+  remaining imports — verified by grep); `pyproject readme` fixed
+  `PLAN.md` → `README.md`; `CHANGELOG.md` added (0.1.0); GitHub Actions
+  CI (`uv sync` + `ruff check` + `pytest`); all unused imports and
+  semicolon-statements fixed (`ruff check .` exits clean; notebooks
+  excluded from lint); README structure section updated (legacy out,
+  results/dashboard in).
+
+Checked:
+- [x] Lagged relations recover an injected 7-sample lead with r > 0.9 and
+  the correct lag; independent channel stays below |r| 0.3; pair-explosion
+  guard raises with guidance at 40 channels.
+- [x] MI network: nonlinear pair (x, x²) is the top edge and its MI is
+  >3× the independent pair's; feature cap honored.
+- [x] No code imports `legacy` (grep before delete); `demo.py`,
+  `mcp_server.py`, `agent_workflow.py` still compile after all changes.
+- [x] `ruff check .` — all checks passed (was 95 errors before step 6).
+- [x] Full suite green: **90 passed** (85 + 5 new in
+  `tests/test_step6_relations.py`); expected-warning count down 12 → 8
+  (suppressed AD cap warnings now a data flag instead).

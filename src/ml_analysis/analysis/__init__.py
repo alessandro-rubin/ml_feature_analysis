@@ -19,6 +19,7 @@ from ml_analysis.analysis.cv_classifier import CrossValidatedClassifier
 from ml_analysis.analysis.distributions import DistributionAnalysis
 from ml_analysis.analysis.importance import FeatureImportance
 from ml_analysis.analysis.pairwise import PairwiseSeparability
+from ml_analysis.analysis.relations import LaggedRelations, MutualInfoNetwork
 from ml_analysis.analysis.semi import LabelSpreadingAnalysis, PULearningAnalysis
 from ml_analysis.analysis.separability import SeparabilityTest
 from ml_analysis.analysis.stability import ImportanceStability
@@ -38,6 +39,8 @@ __all__ = [
     "ChangepointDetection",
     "CorrelationStructure",
     "LabelSpreadingAnalysis",
+    "LaggedRelations",
+    "MutualInfoNetwork",
     "PULearningAnalysis",
     "SeparabilityTest",
     "FeatureImportance",
