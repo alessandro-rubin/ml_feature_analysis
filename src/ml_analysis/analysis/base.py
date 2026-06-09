@@ -87,7 +87,9 @@ class AnalysisContext:
     """Shared state for a chain of analyses.
 
     `df` is typically the period-aggregate (one row per event).
-    `target_col` is the label column being explained / predicted.
+    `target_col` is the label column being explained / predicted; ``None``
+    puts the context in unsupervised mode (label-requiring analyses are
+    skipped by :func:`run_analyses`).
     `label_filter` restricts rows (e.g. {"class": ["TP", "FP"]}).
     `stratify_by` is consumed by the Stratified wrapper, not by base analyses.
     `results` accumulates outputs keyed by analysis name.
@@ -96,7 +98,7 @@ class AnalysisContext:
 
     df: pl.DataFrame
     cfg: Config
-    target_col: str
+    target_col: str | None = None
     label_filter: LabelFilter = None
     stratify_by: str | None = None
     output_dir: str | None = None
@@ -122,26 +124,34 @@ class AnalysisContext:
 @dataclass
 class PreparedXY:
     X: pd.DataFrame
-    y: np.ndarray
+    y: np.ndarray | None
     feature_cols: list[str]
     class_names: list[str]
-    encoder: LabelEncoder
+    encoder: LabelEncoder | None
     report: PreparationReport | None = None
+    ids: pd.DataFrame | None = None  # event_id / asset_id rows aligned to X
 
 
 def prepare_xy(
     ctx: AnalysisContext,
     drop_cols: tuple[str, ...] = (),
     policy: NullPolicy | None = None,
+    ignore_target: bool = False,
 ) -> PreparedXY:
     """Filter, handle nulls per policy, split into numeric X and encoded y.
 
-    Results are cached on the context (keyed by ``drop_cols`` and policy)
-    so chained analyses share one preparation instead of redoing the
-    polars -> pandas conversion and null handling each time.
+    With ``ctx.target_col is None`` (or ``ignore_target=True``) no label is
+    required: ``y``/``encoder`` come back ``None``, no rows are dropped for
+    null targets, and the target column (if present) is still excluded
+    from the features.
+
+    Results are cached on the context (keyed by ``drop_cols``, policy and
+    target handling) so chained analyses share one preparation instead of
+    redoing the polars -> pandas conversion and null handling each time.
     """
     pol = policy or ctx.null_policy
-    cache_key = (tuple(sorted(drop_cols)), pol)
+    use_target = ctx.target_col is not None and not ignore_target
+    cache_key = (tuple(sorted(drop_cols)), pol, use_target)
     cached = ctx._xy_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -150,18 +160,28 @@ def prepare_xy(
     n_in = len(df)
 
     target = ctx.target_col
-    drop = set(drop_cols) | {target, "event_id", "asset_id", ctx.cfg.timestamp_col}
+    drop = set(drop_cols) | {"event_id", "asset_id", ctx.cfg.timestamp_col}
+    if target is not None:
+        drop.add(target)
 
+    id_cols = [c for c in ("event_id", "asset_id") if c in df.columns]
     feature_cols = [
         c for c in df.select_dtypes(include="number").columns if c not in drop
     ]
     X = df[feature_cols].copy()
-    y_raw = df[target]
+    ids = df[id_cols].copy() if id_cols else None
 
-    target_mask = y_raw.notna()
-    n_null_target = int((~target_mask).sum())
-    X = X[target_mask]
-    y_raw = y_raw[target_mask]
+    n_null_target = 0
+    if use_target:
+        y_raw = df[target]
+        target_mask = y_raw.notna()
+        n_null_target = int((~target_mask).sum())
+        X = X[target_mask]
+        y_raw = y_raw[target_mask]
+        if ids is not None:
+            ids = ids[target_mask]
+    else:
+        y_raw = None
 
     null_fracs = X.isna().mean()
     offenders = {c: float(f) for c, f in null_fracs.items() if f > 0}
@@ -184,7 +204,10 @@ def prepare_xy(
     row_mask = X.notna().all(axis=1)
     n_null_rows = int((~row_mask).sum())
     X = X[row_mask].reset_index(drop=True)
-    y_raw = y_raw[row_mask].reset_index(drop=True)
+    if y_raw is not None:
+        y_raw = y_raw[row_mask].reset_index(drop=True)
+    if ids is not None:
+        ids = ids[row_mask].reset_index(drop=True)
 
     report = PreparationReport(
         policy=pol,
@@ -203,15 +226,22 @@ def prepare_xy(
             stacklevel=2,
         )
 
-    enc = LabelEncoder()
-    y = enc.fit_transform(y_raw)
+    if y_raw is not None:
+        enc = LabelEncoder()
+        y = enc.fit_transform(y_raw)
+        class_names = [str(c) for c in enc.classes_]
+    else:
+        enc = None
+        y = None
+        class_names = []
     prep = PreparedXY(
         X=X,
         y=y,
         feature_cols=list(X.columns),
-        class_names=[str(c) for c in enc.classes_],
+        class_names=class_names,
         encoder=enc,
         report=report,
+        ids=ids,
     )
     ctx._xy_cache[cache_key] = prep
     return prep
@@ -220,14 +250,30 @@ def prepare_xy(
 class Analysis(Protocol):
     name: str
     requires: tuple[str, ...]
+    # "full"  — needs a class label on every analysed row (default),
+    # "partial" — works with sparse labels (semi-supervised),
+    # "none" — fully unsupervised.
+    needs_labels: str
 
     def run(self, ctx: AnalysisContext) -> Any: ...
+
+
+def _labels_available(a: Analysis, ctx: AnalysisContext) -> bool:
+    needs = getattr(a, "needs_labels", "full")
+    if needs == "none":
+        return True
+    return ctx.target_col is not None
 
 
 def run_analyses(
     analyses: list[Analysis], ctx: AnalysisContext
 ) -> dict[str, Any]:
-    """Topo-sort by `requires` and execute. Stores each result on ctx.results."""
+    """Topo-sort by `requires` and execute. Stores each result on ctx.results.
+
+    Analyses whose label requirement isn't met by the context (e.g. a
+    supervised analysis on a context with ``target_col=None``) are skipped
+    with a warning, along with anything that depends on them.
+    """
     by_name = {a.name: a for a in analyses}
     ordered: list[Analysis] = []
     seen: set[str] = set()
@@ -250,6 +296,24 @@ def run_analyses(
     for a in analyses:
         visit(a.name)
 
+    skipped: set[str] = set()
     for a in ordered:
+        dep_skipped = [d for d in a.requires if d in skipped]
+        if dep_skipped:
+            skipped.add(a.name)
+            warnings.warn(
+                f"Skipping analysis '{a.name}': depends on skipped {dep_skipped}.",
+                stacklevel=2,
+            )
+            continue
+        if not _labels_available(a, ctx):
+            skipped.add(a.name)
+            warnings.warn(
+                f"Skipping analysis '{a.name}': it requires labels "
+                f"(needs_labels={getattr(a, 'needs_labels', 'full')!r}) but the "
+                "context has target_col=None.",
+                stacklevel=2,
+            )
+            continue
         ctx.results[a.name] = a.run(ctx)
     return ctx.results

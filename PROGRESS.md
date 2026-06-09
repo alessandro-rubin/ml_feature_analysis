@@ -12,7 +12,7 @@ for the evolution"). Each step lists what changed and **what was checked**
   `bootstrap_ci`, `_best_k` edge guard.
 - [x] **Step 2** — Parallel `to_period` materializer (`pl.collect_all`, no
   sequential per-event collect loop) + property test new == old.
-- [ ] **Step 3** — Optional-label context (`needs_labels`) → anomaly
+- [x] **Step 3** — Optional-label context (`needs_labels`) → anomaly
   ensemble + separability permutation test.
 - [ ] **Step 4** — `Dataset`/`WindowSpec` facade + typed `Result` objects +
   `ResultStore` with run manifest.
@@ -94,3 +94,42 @@ Checked:
 - [x] Event order preserved; empty input returns empty frame.
 - [x] Full suite green: **59 passed** (55 + 4 new in
   `tests/test_step2_materializer.py`).
+
+### Step 3
+
+Changes:
+- `analysis/base.py`: `AnalysisContext.target_col` is now optional
+  (`None` = unsupervised mode); `prepare_xy` returns `y=None` /
+  `encoder=None` and keeps all rows when no target (plus new
+  `ignore_target=True` for analyses that must see unlabeled rows even on
+  a labeled context); `PreparedXY.ids` carries `event_id`/`asset_id`
+  aligned to X for traceability; `Analysis` protocol gains `needs_labels`
+  ("full" | "partial" | "none", default "full" via getattr);
+  `run_analyses` skips label-requiring analyses on unlabeled contexts —
+  and anything depending on them — with explicit warnings.
+- `analysis/anomaly.py` (new): `AnomalyDetection` ensemble —
+  IsolationForest + LOF (novelty) + robust Mahalanobis (MinCovDet), each
+  rank-normalized to [0,1] and mean-blended into `ensemble`; optional
+  `baseline_filter` to fit on healthy rows only; per-feature attribution
+  via robust z-scores (median/MAD vs baseline) with `top_contributors`
+  per row; seeds injected from `Config`.
+- `analysis/separability.py` (new): `SeparabilityTest` —
+  `permutation_test_score` on stratified CV balanced accuracy (p-value
+  for "distinguishable at all"), chance level, label-conditioned
+  silhouette, and a plain-language `verdict`.
+
+Checked:
+- [x] Unlabeled context: `prepare_xy` keeps all rows, supervised
+  `importance` is skipped with a warning while `anomaly` runs; dependents
+  of skipped analyses are skipped too (skip propagation test).
+- [x] Anomaly: ≥6 of 8 injected outliers land in the top-8 ensemble
+  scores on 200×3 data; attribution names the perturbed feature (`f2`)
+  as top contributor for every injected outlier; scores bit-reproducible
+  for a fixed `Config.random_state`.
+- [x] Separability: shifted classes → balanced accuracy > 0.85,
+  perm p < 0.05, verdict "separable"; identical-distribution labels →
+  p > 0.05, "not separable" (guards against the tool claiming signal in
+  noise).
+- [x] Full suite green: **67 passed** (59 + 8 new in
+  `tests/test_step3_unsupervised.py`); all pre-existing supervised tests
+  unaffected by the optional-target refactor.
