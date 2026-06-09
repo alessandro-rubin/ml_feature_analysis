@@ -10,8 +10,8 @@ for the evolution"). Each step lists what changed and **what was checked**
   `cfg.random_state`, rank-based importance composite, `prepare_xy` null
   policy + `PreparationReport` + context caching, no bare `except` in
   `bootstrap_ci`, `_best_k` edge guard.
-- [ ] **Step 2** — Single-query `to_period` materializer (one streaming
-  collect, no per-event Python loop) + property test new == old.
+- [x] **Step 2** — Parallel `to_period` materializer (`pl.collect_all`, no
+  sequential per-event collect loop) + property test new == old.
 - [ ] **Step 3** — Optional-label context (`needs_labels`) → anomaly
   ensemble + separability permutation test.
 - [ ] **Step 4** — `Dataset`/`WindowSpec` facade + typed `Result` objects +
@@ -65,3 +65,32 @@ Checked:
 - [x] All three null policies verified on data with partial + all-null
   features: row counts, dropped/imputed feature sets, no NaNs after impute.
 - [x] `prepare_xy` returns the identical cached object on the second call.
+
+### Step 2
+
+Changes:
+- `features/materialize.py`: `to_period` no longer collects sequentially
+  per event. Per-event aggregations are built lazily, schema is resolved
+  **once** per batch (was once per event), and all events are collected in
+  parallel with `pl.collect_all`. Per-event feature isolation is preserved
+  because feature exprs are applied inside each event frame before
+  aggregation. New `_label_cols_from_schema` avoids re-resolving schemas.
+- `dataset/loader.py` + `config.py`: opt-in `Config.assume_sorted` — when
+  raw files are chronological, `load_event` uses `set_sorted` instead of an
+  O(n log n) per-event `.sort()`.
+
+Checked:
+- [x] **Design decision verified by benchmark, not assumption.** The
+  audit's "one fused concat→group_by streaming query" alternative was
+  implemented first and benchmarked: its plan-optimization cost grows
+  superlinearly in event count (3000 events × 1k rows: fused 12.2s vs loop
+  1.5s). The audit's other lever, `pl.collect_all`, wins instead:
+  1000×2000: loop 0.58s → 0.17s (**×3.5**); 3000×1000: 1.53s → 0.54s
+  (**×2.8**). With file-backed scans the parallel-I/O gain should be larger.
+- [x] Property test: new path output == old per-event-loop output
+  (reference implementation kept in the test), frame-equal across 7 events.
+- [x] Rolling/diff features do not bleed across events (per-event
+  `x_diff__mean` matches closed-form `(last-first)/(n-1)`).
+- [x] Event order preserved; empty input returns empty frame.
+- [x] Full suite green: **59 passed** (55 + 4 new in
+  `tests/test_step2_materializer.py`).

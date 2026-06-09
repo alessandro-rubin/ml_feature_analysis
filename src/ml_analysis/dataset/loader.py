@@ -128,4 +128,9 @@ def load_event(
         lf = lf.select(keep)
 
     ts = pl.col(cfg.timestamp_col)
-    return lf.filter((ts >= start) & (ts <= end)).sort(cfg.timestamp_col)
+    lf = lf.filter((ts >= start) & (ts <= end))
+    if cfg.assume_sorted:
+        # Files are chronological: skip the O(n log n) per-event sort and
+        # just mark the column so group_by_dynamic etc. accept it.
+        return lf.set_sorted(cfg.timestamp_col)
+    return lf.sort(cfg.timestamp_col)
