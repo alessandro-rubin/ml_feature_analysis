@@ -14,8 +14,8 @@ for the evolution"). Each step lists what changed and **what was checked**
   sequential per-event collect loop) + property test new == old.
 - [x] **Step 3** — Optional-label context (`needs_labels`) → anomaly
   ensemble + separability permutation test.
-- [ ] **Step 4** — `Dataset`/`WindowSpec` facade + typed `Result` objects +
-  `ResultStore` with run manifest.
+- [x] **Step 4** — `Dataset`/`WindowSpec` facade + typed `Result` objects +
+  `ResultStore` with run manifest + notebook-first `Run` facade.
 - [ ] **Step 5** — Semi-supervised (label spreading, PU), changepoint,
   correlation structure; static HTML report + dashboard.
 - [ ] **Step 6** — Relations family (lagged relations, MI network);
@@ -133,3 +133,44 @@ Checked:
 - [x] Full suite green: **67 passed** (59 + 8 new in
   `tests/test_step3_unsupervised.py`); all pre-existing supervised tests
   unaffected by the optional-target refactor.
+
+### Step 4
+
+Changes:
+- `dataset/facade.py` (new): `Dataset` — `.assets`, `.channels()`,
+  `.lazy(asset, [start, end])`, `.events(label_table)`; lazy end-to-end,
+  honors `assume_sorted`.
+- `features/windows.py` (new): `WindowSpec.event() / .tumbling(every) /
+  .sliding(every, period)` + one `materialize(lfs, spec, cfg, ...)`
+  dispatching to `to_period` / `to_windowed` (windowed events collected in
+  parallel via `collect_all`, consistent with step 2).
+- `results/` (new package): `AnalysisResult.from_raw` sorts any analysis
+  dict into typed buckets (frames / arrays / scalars / objects) with a
+  `.summary()`; `ResultStore.save_run/load_run/load_manifest` persists runs
+  as parquet + npy + json with a manifest (config, package versions, data
+  fingerprint via `hash_rows`, explicit `not_serialized` list for models).
+- `run.py` (new): `Run` facade — `Run(table, target_col=...).importance()
+  .separability().anomaly().save(dir)`; per-analysis shortcuts, result
+  caching through the shared context, `run_all`, `summary()`.
+- Package `__init__` exports: `Config, Dataset, Run, WindowSpec,
+  materialize, AnalysisResult, ResultStore`; version bumped to 0.1.0.
+- Scope note (deviation from blind plan §6.1): no plotly migration —
+  `.plot()` per-result-type is deferred; the existing matplotlib `io/`
+  stack remains the plotting path until step 5's report/dashboard.
+
+Checked:
+- [x] `Dataset` lists assets, reads channels, slices lazily (verified
+  against tmp parquet store with the same layout as existing tests).
+- [x] `materialize` with `event` spec == `to_period` results (2 events);
+  `tumbling("6h")` over a 24 h event yields exactly 4 windows.
+- [x] `AnalysisResult.from_raw` bucket assignment for frames / arrays /
+  scalars / scalar-lists / models.
+- [x] Full round trip: `Run` → importance + separability + anomaly →
+  `save()` → `ResultStore.load_run` returns identical p-values; manifest
+  carries config seed, target_col, row fingerprint, library versions, and
+  the not-serialized models list.
+- [x] `Run.importance()` returns the cached frame object on second call
+  (no silent refit); unsupervised `Run` raises a clear error when asked
+  for a supervised analysis.
+- [x] Full suite green: **76 passed** (67 + 9 new in
+  `tests/test_step4_facade.py`).
