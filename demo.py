@@ -18,10 +18,17 @@ No external files required — everything is synthesised in demo_data/.
 
 from __future__ import annotations
 
+import io
 import shutil
+import sys
 import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Ensure box-drawing / Unicode output works on legacy console codepages (e.g. cp1252).
+for _stream in (sys.stdout, sys.stderr):
+    if isinstance(_stream, io.TextIOWrapper):
+        _stream.reconfigure(encoding="utf-8")
 
 import matplotlib
 

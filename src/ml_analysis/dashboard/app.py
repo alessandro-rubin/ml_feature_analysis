@@ -1,7 +1,10 @@
-"""Streamlit app: browse saved analysis runs (manifest, tables, scores).
+"""Streamlit app: browse saved analysis runs (KPIs, charts, tables).
 
 The dashboard is a thin reader over `ResultStore` run directories — it
-never recomputes an analysis. Launch:
+never recomputes an analysis. All chart logic lives UI-independently in
+`ml_analysis.results.figures` (shared with the HTML report and
+`Run.figures()`); this module only arranges the matplotlib figures it
+returns. Launch:
 
     streamlit run src/ml_analysis/dashboard/app.py -- --root outputs/runs
 """
@@ -12,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
+import matplotlib.pyplot as plt
 import polars as pl
 
 try:
@@ -24,6 +27,7 @@ except ImportError as err:  # pragma: no cover
     ) from err
 
 from ml_analysis.results import ResultStore
+from ml_analysis.results.figures import figures_for_result, headline_metrics
 
 
 def _cli_root() -> str:
@@ -52,28 +56,50 @@ def main() -> None:  # pragma: no cover — manual/UI entry point
     manifest = store.load_manifest(run_name)
     results = store.load_run(run_name)
 
+    _render_overview(results)
+
     with st.expander("Run manifest", expanded=False):
         st.json(manifest)
 
     names = list(results)
     tabs = st.tabs(names)
     for tab, name in zip(tabs, names):
-        res = results[name]
         with tab:
-            if res.scalars:
-                st.write({k: v for k, v in res.scalars.items()})
-            for fname, frame in res.frames.items():
-                st.subheader(fname)
+            _render_analysis(results[name])
+
+
+def _render_overview(results) -> None:
+    metrics = headline_metrics(results)
+    if not metrics:
+        return
+    st.subheader("Overview")
+    cols = st.columns(len(metrics))
+    for col, m in zip(cols, metrics):
+        col.metric(m["label"], m["value"], help=m.get("help"))
+
+
+def _render_analysis(res) -> None:
+    if res.scalars:
+        st.write({k: v for k, v in res.scalars.items()})
+
+    figs = figures_for_result(res)
+    if figs:
+        st.markdown("#### Charts")
+        for left, right in zip(figs[::2], figs[1::2] + [None]):
+            cols = st.columns(2)
+            for col, item in zip(cols, (left, right)):
+                if item is None:
+                    continue
+                _, fig = item
+                col.pyplot(fig)
+                plt.close(fig)
+
+    if res.frames:
+        st.markdown("#### Tables")
+        for fname, frame in res.frames.items():
+            with st.expander(fname, expanded=False):
                 pdf = frame.to_pandas() if isinstance(frame, pl.DataFrame) else frame
                 st.dataframe(pdf, width="stretch")
-            for aname, arr in res.arrays.items():
-                if arr.ndim == 1 and np.issubdtype(arr.dtype, np.number):
-                    st.subheader(aname)
-                    counts, edges = np.histogram(arr[np.isfinite(arr)], bins=40)
-                    st.bar_chart(
-                        pl.DataFrame({"bin": edges[:-1], "count": counts}),
-                        x="bin", y="count",
-                    )
 
 
 if __name__ == "__main__":  # streamlit executes scripts as __main__

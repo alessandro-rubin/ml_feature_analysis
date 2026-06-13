@@ -15,7 +15,6 @@ import io
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import polars as pl
 
 from ml_analysis.results.result import AnalysisResult
@@ -32,7 +31,7 @@ th, td { border: 1px solid #ccc; padding: .25rem .55rem; text-align: right; }
 th { background: #f0f0f0; }
 .scalars td:first-child { font-weight: 600; text-align: left; }
 .note { color: #777; font-size: .8rem; }
-img { max-width: 640px; display: block; margin: .5rem 0; }
+img { max-width: 760px; display: block; margin: .5rem 0; }
 """
 
 
@@ -45,20 +44,20 @@ def _fig_to_b64(fig) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def _array_histogram(name: str, arr: np.ndarray) -> str | None:
-    if arr.ndim != 1 or arr.size == 0 or arr.size > 200_000:
-        return None
-    if not np.issubdtype(arr.dtype, np.number):
-        return None
+def _figures_html(res: AnalysisResult) -> str:
+    """Curated charts for an analysis, embedded as standalone PNGs."""
     import matplotlib
 
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    from ml_analysis.results.figures import figures_for_result
 
-    fig, ax = plt.subplots(figsize=(6, 2.6))
-    ax.hist(arr[np.isfinite(arr)], bins=40, color="#4878a8")
-    ax.set_title(name, fontsize=10)
-    return f'<img alt="{html.escape(name)}" src="data:image/png;base64,{_fig_to_b64(fig)}"/>'
+    parts = []
+    for title, fig in figures_for_result(res):
+        parts.append(
+            f'<img alt="{html.escape(title)}" '
+            f'src="data:image/png;base64,{_fig_to_b64(fig)}"/>'
+        )
+    return "".join(parts)
 
 
 def _frame_html(name: str, frame: Any) -> str:
@@ -103,12 +102,9 @@ def render_html(
         res = AnalysisResult.from_raw(name, raw)
         parts.append(f"<h2>{html.escape(name)}</h2>")
         parts.append(_scalars_html(res.scalars))
+        parts.append(_figures_html(res))
         for fname, frame in res.frames.items():
             parts.append(_frame_html(fname, frame))
-        for aname, arr in res.arrays.items():
-            img = _array_histogram(f"{name}.{aname}", arr)
-            if img:
-                parts.append(img)
         if res.objects:
             parts.append(
                 f'<p class="note">not rendered (live objects): '

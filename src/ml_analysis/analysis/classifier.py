@@ -77,11 +77,14 @@ class ClassifierEvaluation:
             random_state=ctx.cfg.random_state,
         )
 
+        n_classes = len(prep.class_names)
         per_model = {}
         for name, model in self._models(ctx.cfg).items():
             model.fit(X_tr, y_tr)
             preds = model.predict(X_te)
-            cm = confusion_matrix(y_te, preds)
+            # Pin the label set so the matrix is always n_classes×n_classes,
+            # even when a fold/split happens to miss a class.
+            cm = confusion_matrix(y_te, preds, labels=list(range(n_classes)))
             report = classification_report(
                 y_te, preds, target_names=prep.class_names,
                 zero_division=0, output_dict=True,
@@ -99,8 +102,23 @@ class ClassifierEvaluation:
                 "report": report,
                 "importances": imp,
             }
+        # Flattened confusion matrices (model × true × pred): the per-model
+        # dicts above live in `models`, which the store drops, so this long
+        # frame is what lets the dashboard draw confusion-matrix heatmaps.
+        conf_rows = [
+            {"model": name, "true_class": tc, "pred_class": pc,
+             "count": int(r["confusion_matrix"][i, j])}
+            for name, r in per_model.items()
+            for i, tc in enumerate(prep.class_names)
+            for j, pc in enumerate(prep.class_names)
+        ]
+        confusion_long = pd.DataFrame(
+            conf_rows, columns=["model", "true_class", "pred_class", "count"]
+        )
+
         return {
             "models": per_model,
+            "confusion_long": confusion_long,
             "y_test": y_te,
             "class_names": prep.class_names,
         }

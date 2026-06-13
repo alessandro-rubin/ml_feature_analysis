@@ -182,6 +182,20 @@ class Run:
         manifest = {"target_col": self.ctx.target_col}
         return write_report(path, self.ctx.results, manifest, title)
 
+    def figures(self, max_figures: int = 8) -> dict:
+        """Curated matplotlib figures per analysis (UI-independent).
+
+        Returns ``{analysis_name: [(title, Figure), ...]}`` for everything
+        computed so far — the same plots the dashboard and HTML report draw,
+        ready to ``show`` in a notebook or ``save_fig`` to disk.
+        """
+        from ml_analysis.results.figures import figures_for_run
+
+        results = {
+            n: AnalysisResult.from_raw(n, r) for n, r in self.ctx.results.items()
+        }
+        return figures_for_run(results, max_figures=max_figures)
+
     def summary(self) -> str:
         """Digest of every analysis computed so far."""
         if not self.ctx.results:
