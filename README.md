@@ -46,7 +46,8 @@ src/ml_analysis/
   analysis/          # importance / clustering / classifier / pairwise /
                      # stratified / distributions, plus DAG runner
   io/                # writers for figures, tables, parquet outputs
-  legacy/            # kept until the Phase 5 port is fully verified
+  results/           # AnalysisResult, ResultStore, static HTML report
+  dashboard/         # streamlit run browser over a ResultStore
 ```
 
 ### Data flow
@@ -129,7 +130,8 @@ Phases 0-6 of [PLAN.md](PLAN.md) have landed:
 - pluggable label sources (Excel)
 - feature and aggregator registries
 - per-sample / windowed / period materializers
-- pluggable analysis module with DAG runner + ported legacy logic
+- pluggable analysis module with DAG runner (supervised, unsupervised,
+  semi-supervised families)
 - pairwise / stratified / distribution analyses
 
 See [PLAN.md](PLAN.md) for the full design and phase breakdown.

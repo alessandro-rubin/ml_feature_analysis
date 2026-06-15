@@ -7,7 +7,7 @@ name = "ml_analysis"
 version = "0.0.1"
 description = "Modular polars-first toolkit for time-series anomaly-detection label analysis."
 requires-python = ">=3.11"
-readme = "PLAN.md"
+readme = "README.md"
 dependencies = [
     "polars>=1.0",
     "pandas>=2.0",
@@ -26,6 +26,7 @@ dependencies = [
 boosting = ["lightgbm>=4.0", "xgboost>=2.0"]
 clustering = ["hdbscan>=0.8", "umap-learn>=0.5"]
 jupyter = ["jupyter"]
+dashboard = ["streamlit>=1.30"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 all = [
     "lightgbm>=4.0",
@@ -42,6 +43,7 @@ packages = ["src/ml_analysis"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["*.ipynb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

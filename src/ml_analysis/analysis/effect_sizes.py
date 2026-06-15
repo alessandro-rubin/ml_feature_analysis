@@ -12,6 +12,8 @@ statistic of two samples.
 
 from __future__ import annotations
 
+import warnings
+
 from typing import Callable
 
 import numpy as np
@@ -110,14 +112,25 @@ def bootstrap_ci(
         return float(point), float("nan"), float("nan")
     arrs = [np.asarray(s) for s in samples]
     stats = np.empty(n_resamples, dtype=float)
+    n_failed = 0
+    last_err: Exception | None = None
     for i in range(n_resamples):
         resampled = tuple(
             a[rng.integers(0, n, size=n)] for a, n in zip(arrs, sizes)
         )
         try:
             stats[i] = stat_fn(*resampled)
-        except Exception:
+        except Exception as err:  # noqa: BLE001 — counted and surfaced below
             stats[i] = np.nan
+            n_failed += 1
+            last_err = err
+    if n_failed:
+        warnings.warn(
+            f"bootstrap_ci: {n_failed}/{n_resamples} resamples raised "
+            f"(last: {type(last_err).__name__}: {last_err}); they were "
+            "excluded from the CI.",
+            stacklevel=2,
+        )
     finite = stats[np.isfinite(stats)]
     if len(finite) == 0:
         return float(point), float("nan"), float("nan")
