@@ -5,6 +5,13 @@ only — deliberately *without* reading the existing source. A separate section
 at the end (added after a code review) records the compatibility verdict:
 evolve vs. redesign.
 
+> **Build complete (v0.1).** The "EVOLVE" verdict and the revised build
+> order in §10 have landed in full — see [PROGRESS.md](PROGRESS.md) for
+> per-step verification and [CHANGELOG.md](CHANGELOG.md) for the release
+> notes. Illustrative names in the snippets below (e.g. `import pmkit as
+> pm`) are design sketches; the shipped package is `ml_analysis` with the
+> `Run` facade documented in [README.md](README.md).
+
 ---
 
 ## 1. Mission & design constraints
@@ -89,6 +96,12 @@ ds.lazy(asset=...)   # -> pl.LazyFrame, never collected here
   detection, channel coverage report. If files are chronologically written,
   `set_sorted` instead of re-sorting.
 
+*Shipped (`dataset/facade.py`):* `Dataset(Config(data_root=...))` with
+`.assets`, `.channels(asset)`, `.lazy(asset, start, end)`, `.events(labels)`.
+The `scan_parquet`/`SensorSchema` constructor, the explicit schema catalog,
+and the registration-time validation pass are **design sketches — not
+implemented** (`Config.assume_sorted` is the only `set_sorted` lever).
+
 ### 3.2 `EventTable` (labels & windows of interest)
 
 ```python
@@ -104,6 +117,11 @@ events.labels                        # may contain nulls -> semi-supervised
   any event), class balance report, leakage guard (no window overlap between
   train/test splits at the *asset* or *event* level).
 
+*Not shipped:* there is no `EventTable` class. Labels enter through the
+`LabelSource` protocol (`labels/`, `ExcelLabelSource`) and become per-event
+frames via `Dataset.events(label_table)`. Nullable labels flow through, but
+`healthy_baseline()` and the leakage guard were not built.
+
 ### 3.3 `WindowSpec`
 
 One declarative object for "what is a row in the analysis table":
@@ -115,6 +133,9 @@ One declarative object for "what is a row in the analysis table":
 
 The spec compiles to polars `group_by_dynamic` / interval-join expressions, so
 windowing stays inside the lazy query.
+
+*Shipped (`features/windows.py`):* `WindowSpec.event()`, `.tumbling(every)`,
+`.sliding(every, period)`. `pre_event(horizon=...)` was **not** built.
 
 ---
 
@@ -143,6 +164,11 @@ Built-in families:
 `FeatureSet` = channels × features (with include/exclude rules), serializable
 to/from config so a run is reproducible from its manifest.
 
+*Not shipped:* there is no `FeatureSet` object and `@feature` takes no
+`tags`. Its real signature is `@feature(name, deps=())`; selection happens
+through `sources` / `feature_names` / `aggregators` lists passed to
+`materialize` / `to_period`.
+
 ### 4.2 Materializer — *one* query, *one* collect
 
 ```python
@@ -159,6 +185,11 @@ table = materialize(ds, window_spec, feature_set, events=events)
 - **Feature store:** results cached to parquet keyed by
   `hash(data fingerprint, window_spec, feature_set)`; notebook restarts and
   the dashboard reuse the cache instead of recomputing.
+
+*Partially shipped:* `materialize(lfs, spec, cfg, ...)` takes per-event
+LazyFrames and a `Config` (not `ds` + `feature_set` + `events`). The feature
+store (parquet cache of materialized features) was **not** built — only
+analysis *results* are persisted, via `ResultStore` (§6.1).
 
 ### 4.3 Null & quality policy (explicit, reported)
 
@@ -198,6 +229,11 @@ class Analysis(Protocol):
   `pipeline.anomaly_discovery()`, `pipeline.separability_check()` — but every
   analysis is also directly callable in a notebook.
 
+*Not shipped:* there is no `pipeline` module. The equivalent is the `Run`
+facade (`run.py`) — `Run(table).run_all([...])` or the per-analysis
+shortcuts (`run.importance()`, `run.anomaly()`, …), which share one
+`AnalysisContext` and its `prepare_xy` cache.
+
 ### 5.2 Supervised family — *"which features discriminate, and how?"*
 
 | Analysis | Output |
@@ -219,6 +255,11 @@ class Analysis(Protocol):
   (ARI/NMI) — *one diagnostic among several*, not the only unsupervised tool.
 - Hopkins/clusterability statistics implemented with **power-1 distances**
   (the power-`d` variant overflows at ~100 features — audit §3 bug).
+
+*Shipped as:* `SeparabilityTest` (the permutation test) plus
+`ClusterAnalysis` + `ClusterValidation` (label-scored clustering with the
+power-1 Hopkins fix). The named `embedding_overlap` and `cluster_alignment`
+analyses were **not** built.
 
 ### 5.4 Unsupervised family — *"what's anomalous / structured in unlabeled data?"*
 
@@ -244,6 +285,10 @@ class Analysis(Protocol):
 - `guided_anomaly`: anomaly ensemble calibrated/thresholded on the few known
   failure windows.
 
+*Shipped as:* `LabelSpreadingAnalysis` and `PULearningAnalysis`. There is no
+separate `guided_anomaly` — `AnomalyDetection(baseline_filter=...)` covers
+fitting the ensemble on known-healthy windows.
+
 ### 5.6 Relations family — *exploratory, clearly flagged*
 
 - `lagged_relations`: cross-correlation / Granger-style lagged regression
@@ -258,6 +303,9 @@ Shared `stats/` utilities: multiple-testing correction, effect sizes with
 bootstrap CIs (no bare `except Exception` — failures during resampling
 surface as warnings with counts), permutation tests, all consuming the
 context RNG.
+
+*Shipped, but not as a `stats/` package:* these live under `analysis/`
+(`multiple_testing.py`, `effect_sizes.py`).
 
 ---
 
@@ -282,6 +330,13 @@ class ImportanceResult(Result):
   feature-set hash, config incl. seed, package versions) to a run directory —
   full reproducibility and the dashboard's data source.
 
+*Shipped differently:* there is one generic `AnalysisResult` (not
+per-analysis subclasses like `ImportanceResult`) with `.summary()` and a
+`.frames` dict (not `to_frames()`). Plotting is **matplotlib**, not plotly:
+the UI-independent `results/figures.py` factory (`figures_for_result` /
+`Run.figures()`) feeds both the HTML report and the Streamlit dashboard.
+`ResultStore` (with the run manifest) shipped as described.
+
 ### 6.2 Notebook-first API (the primary interface)
 
 ```python
@@ -297,6 +352,13 @@ run.importance().plot()
 run.anomaly(baseline="healthy").plot(asset="A07")
 run.report("run_2026-06-09/")     # static HTML, all results
 ```
+
+*This snippet is a design sketch.* `Run` and `run.report(...)` are real, but
+the package is `ml_analysis` (not `pmkit`), `Run(table, target_col=..., cfg=
+...)` takes a materialized table (no `EventTable`), results expose `.frames`
+not `.plot()` (use `run.figures()`), and the anomaly baseline parameter is
+`baseline_filter={...}`. The accurate version is in
+[README.md](README.md#notebook-first-api-run).
 
 ### 6.3 Dashboard (thin layer, no second compute path)
 
@@ -425,3 +487,61 @@ Delete `legacy/ml_analysis.py`, fix `pyproject readme = "PLAN.md"` →
 4. `Dataset`/`WindowSpec` facade + typed Results + ResultStore.
 5. Semi-supervised, changepoint, correlation structure; report + dashboard.
 6. Relations family; housekeeping throughout.
+
+---
+
+## 11. Appendix: original phased plan (historical)
+
+Before this target architecture existed, the project followed a phased plan
+(formerly `PLAN.md`, now folded in here). It built the original supervised
+label-discrimination toolkit; §1–§10 above supersede its design, but the
+phase breakdown is preserved as a record of how the codebase first came
+together.
+
+The original goal was narrower — *"given labeled events
+`(asset_id, start, end, class, *extras)`, which features discriminate class
+A from class B, do strata differ, and are the classes separable at all?"* —
+with the same polars-first, abstract-label stance the current design keeps.
+
+### Execution phases
+
+- **Phase 0 — scaffolding.** `pyproject.toml`, `src/ml_analysis/` skeleton,
+  `Config` dataclass (paths, timestamp col, filename pattern), `.gitignore`,
+  empty `tests/`. The original script was parked in `legacy/ml_analysis.py`
+  (deleted in the evolution's housekeeping).
+- **Phase 1 — dataset builder.** `dataset/loader.py::load_event` (glob +
+  filename date-range parse + `scan_parquet` + timestamp filter) and
+  `dataset/builder.py::build` returning `dict[event_id -> LazyFrame]` with
+  label metadata attached as literal columns; lazy, no materialization.
+- **Phase 2 — label sources.** `labels/base.py::LabelSource` protocol and
+  `labels/excel.py::ExcelLabelSource(path, sheet, column_map)` with schema
+  validation (required cols, type coercion).
+- **Phase 3 — feature registry.** `FeatureSpec(name, deps, expr)`, the
+  `@feature` decorator, a topological dependency resolver, and the
+  `features/builtins.py` stock time-series features.
+- **Phase 4 — three materializers.** `to_per_sample` / `to_windowed` /
+  `to_period` (the last originally a degenerate single-window case of
+  `to_windowed`), plus `AggSpec` + `@aggregate`. *(The evolution rewrote
+  `to_period` into the parallel `collect_all` path of §4.2.)*
+- **Phase 5 — analysis module refactor.** `analysis/base.py::Analysis`
+  protocol (`name`, `requires`, `run(ctx)`), a registry + DAG runner sharing
+  a `ctx`, and the importance / clustering / classifier ports — each
+  accepting `target_col` + `label_filter` + `stratify_by`. Legacy deleted
+  once parity was verified.
+- **Phase 6 — question-specific analyses.** `pairwise` (per class-pair
+  importance / AUC / Cliff's delta / KS), `stratified` (run any analysis
+  per stratum and diff), `distributions` (per-feature class-split tests).
+
+### Original defaults & open items
+
+- Defaults (all configurable): timestamp column `timestamp`, filename date
+  format `YYYYMMDD`, period-aggregate as the default analysis input, Python
+  3.11+, `uv`/`pip` via `pyproject.toml`.
+- Label handling was uniform across analyses via `target_col` /
+  `label_filter` / `stratify_by`, so "TP vs FP", "TN vs FN vs nominal", and
+  "behaviour by replacement type" were configuration, not new code paths.
+- Open items flagged at the time: confirm the timestamp column name and
+  filename date regex against real data; infer label-schema extras
+  (`replacement_type`, …) from the Excel source rather than a fixed list;
+  no streaming/Dask layer yet (assumed sufficient for a few hundred GB) —
+  the constraint the audit and §2 later revisited.

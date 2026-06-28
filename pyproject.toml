@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ml_analysis"
-version = "0.0.1"
+version = "0.2.0"
 description = "Modular polars-first toolkit for time-series anomaly-detection label analysis."
 requires-python = ">=3.11"
 readme = "README.md"

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 — 2026-06-28
+
+### Added
+- UI-independent figure factory (`results/figures.py`):
+  `figures_for_result` / `figures_for_run` / `headline_metrics`, shared by
+  the Streamlit dashboard (now a thin renderer), the static HTML report,
+  and `Run.figures()`. Analyses also emit flattened top-level frames
+  (clustering `embedding`/`k_values`, pairwise `pairs_long`, classifier
+  `confusion_long`) so iconic plots survive a `ResultStore` round trip.
+- `make_constant_counter` built-in feature (+ tests).
+
+### Removed
+- Optional Groq/Claude AI integration layer (`agent_workflow.py`,
+  `agent_workflow_groq.py`, `demo_agent.py`, `mcp_server.py`,
+  `AI_INTEGRATION.md`) and the `[ai]`/`[ai-groq]` extras. The core
+  polars-first library, demo, and tests are unaffected.
+
 ## 0.1.0 — 2026-06-09
 
 Evolution of the toolkit along `ARCHITECTURE.md` §10 (see `PROGRESS.md`
