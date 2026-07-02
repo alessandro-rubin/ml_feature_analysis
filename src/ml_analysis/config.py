@@ -39,6 +39,10 @@ class Config:
         Where analyses persist their artefacts.
     random_state : int, default ``42``
         Seed propagated to scikit-learn / numpy where applicable.
+    assume_sorted : bool, default ``False``
+        If True, raw parquet files are trusted to be chronologically
+        ordered and the loader marks the timestamp column with
+        ``set_sorted`` instead of paying an O(n log n) sort per event.
     extras : dict
         Free-form bag for project-specific settings consumed by user code.
     """
@@ -51,6 +55,7 @@ class Config:
     class_col: str = "class"
     output_dir: Path = Path("outputs")
     random_state: int = 42
+    assume_sorted: bool = False
     extras: dict = field(default_factory=dict)
 
     def asset_dir(self, asset_id: str) -> Path:

@@ -32,6 +32,17 @@ from ml_analysis.features.registry import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _label_cols_from_schema(schema: pl.Schema, cfg: Config) -> list[str]:
+    """Label/id columns given an already-resolved schema (see `_label_cols`)."""
+    candidates = ["event_id", cfg.asset_col, cfg.class_col]
+    return [c for c in candidates if c in schema.names()] + [
+        c for c in schema.names()
+        if c not in candidates
+        and c != cfg.timestamp_col
+        and not schema[c].is_numeric()
+    ]
+
+
 def _label_cols(lf: pl.LazyFrame, cfg: Config) -> list[str]:
     """Return the columns that came from label metadata + ids.
 
@@ -40,14 +51,7 @@ def _label_cols(lf: pl.LazyFrame, cfg: Config) -> list[str]:
     Used by the materialisers to know what to carry through aggregation
     and what to exclude from automatic source selection.
     """
-    schema = lf.collect_schema()
-    candidates = ["event_id", "asset_id", cfg.class_col]
-    return [c for c in candidates if c in schema.names()] + [
-        c for c in schema.names()
-        if c not in candidates
-        and c != cfg.timestamp_col
-        and not schema[c].is_numeric()
-    ]
+    return _label_cols_from_schema(lf.collect_schema(), cfg)
 
 
 def _resolve_features(
@@ -66,7 +70,7 @@ def to_per_sample(
     lf: pl.LazyFrame,
     cfg: Config,
     feature_names: list[str] | None = None,
-    registry: FeatureRegistry | None = None,
+    feature_registry: FeatureRegistry | None = None,
 ) -> pl.LazyFrame:
     """Add registered features as columns, leaving row count unchanged.
 
@@ -79,8 +83,8 @@ def to_per_sample(
         kept for signature symmetry with the other materialisers.
     feature_names : list of str, optional
         Subset of features to apply. If ``None`` (default), every feature
-        in ``registry`` is applied. Pass ``[]`` to skip features entirely.
-    registry : FeatureRegistry, optional
+        in ``feature_registry`` is applied. Pass ``[]`` to skip features entirely.
+    feature_registry : FeatureRegistry, optional
         Registry to resolve features from. Defaults to the process-wide
         registry.
 
@@ -90,7 +94,7 @@ def to_per_sample(
         The input frame with one new column per applied feature, in
         dependency order.
     """
-    reg = registry or default_features()
+    reg = feature_registry or default_features()
     specs = _resolve_features(feature_names, reg)
     out = lf
     for spec in specs:
@@ -209,6 +213,16 @@ def to_period(
     event duration and no time grouping — i.e. one row per input event.
     Unlike :func:`to_windowed`, this function eagerly collects.
 
+    All per-event aggregations are built lazily (feature expressions are
+    applied inside each event, so rolling/diff features never bleed across
+    events), the schema is resolved **once** for the whole batch, and the
+    events are collected together via ``pl.collect_all`` — Polars runs
+    them in parallel on its thread pool instead of the old sequential
+    per-event ``collect()`` loop, which was single-core-bound.
+    (A single fused ``concat -> group_by`` query was benchmarked too: its
+    plan-optimization cost grows superlinearly with the number of events
+    and loses badly past ~1k events, so ``collect_all`` is the lever used.)
+
     Parameters
     ----------
     lfs : dict, iterable, or pl.LazyFrame
@@ -235,7 +249,7 @@ def to_period(
     Returns
     -------
     pl.DataFrame
-        One row per input event, with columns
+        One row per input event (input order preserved), with columns
         ``"<source>__<aggregator>"`` plus any label columns.
         Returns an empty :class:`pl.DataFrame` if ``lfs`` is empty.
     """
@@ -248,23 +262,25 @@ def to_period(
         items = list(lfs.values())
     else:
         items = list(lfs)
+    if not items:
+        return pl.DataFrame()
 
     aggregators = aggregators or ["mean", "std", "min", "max"]
-    rows: list[pl.DataFrame] = []
-    for lf in items:
-        base = to_per_sample(lf, cfg, feature_names, fr)
-        schema = base.collect_schema()
-        label_cols = _label_cols(base, cfg)
-        srcs = sources
-        if srcs is None:
-            srcs = [
-                c for c in schema.names()
-                if c != cfg.timestamp_col
-                and c not in label_cols
-                and schema[c].is_numeric()
-            ]
-        agg_exprs = [ar.get(a).apply(s) for s in srcs for a in aggregators]
-        label_exprs = [pl.col(c).first().alias(c) for c in label_cols]
-        rows.append(base.select(label_exprs + agg_exprs).collect())
 
-    return pl.concat(rows, how="vertical_relaxed") if rows else pl.DataFrame()
+    bases = [to_per_sample(lf, cfg, feature_names, fr) for lf in items]
+    # Events share one schema (same files, same features): resolve once.
+    schema = bases[0].collect_schema()
+    label_cols = _label_cols_from_schema(schema, cfg)
+    srcs = sources
+    if srcs is None:
+        srcs = [
+            c for c in schema.names()
+            if c != cfg.timestamp_col
+            and c not in label_cols
+            and schema[c].is_numeric()
+        ]
+    agg_exprs = [ar.get(a).apply(s) for s in srcs for a in aggregators]
+    label_exprs = [pl.col(c).first().alias(c) for c in label_cols]
+
+    lazy_rows = [base.select(label_exprs + agg_exprs) for base in bases]
+    return pl.concat(pl.collect_all(lazy_rows), how="vertical_relaxed")
