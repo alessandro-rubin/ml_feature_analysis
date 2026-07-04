@@ -21,14 +21,25 @@ class Config:
     ----------
     data_root : Path, default ``Path("data")``
         Root directory containing one folder per asset.
-    asset_subdir : str, default ``"input"``
-        Sub-directory inside each asset folder that holds parquet files,
-        i.e. files are read from ``<data_root>/<asset_id>/<asset_subdir>/``.
+    asset_subdir : str, default ``""``
+        Optional sub-directory inside each asset folder that holds parquet
+        files. The default (empty string) means files live directly in
+        ``<data_root>/<asset_id>/``; set e.g. ``"input"`` for a nested
+        layout ``<data_root>/<asset_id>/input/``.
     filename_pattern : str
         Regular expression used to parse parquet filenames into
-        ``(asset, start, end)``. Must contain named groups ``asset``,
-        ``start``, and ``end``; ``start`` and ``end`` are parsed as
-        ``%Y%m%d``. Default matches ``"<asset>_<YYYYMMDD>_<YYYYMMDD>.parquet"``.
+        ``(source, start, end)``. Must contain named groups ``start`` and
+        ``end`` (parsed as ``%y%m%d`` when 6 digits, ``%Y%m%d`` when 8)
+        and should contain a ``source`` group naming the data set the file
+        belongs to. Files sharing a ``source`` value must have identical
+        columns and are concatenated across time; files with different
+        ``source`` values carry different variables and are outer-joined
+        on :attr:`timestamp_col` (see
+        :mod:`ml_analysis.dataset.loader`). A pattern without a
+        ``source`` group treats every file as one source (a legacy
+        ``asset`` group is used as the source name if present). Default
+        matches ``"<dataname>_<YYMMDD|YYYYMMDD>_<YYMMDD|YYYYMMDD>.parquet"``
+        where ``<dataname>`` may itself contain underscores.
     timestamp_col : str, default ``"timestamp"``
         Name of the time column in the raw data.
     asset_col : str, default ``"asset_id"``
@@ -44,8 +55,10 @@ class Config:
     """
 
     data_root: Path = Path("data")
-    asset_subdir: str = "input"
-    filename_pattern: str = r"^(?P<asset>[^_]+)_(?P<start>\d{8})_(?P<end>\d{8})\.parquet$"
+    asset_subdir: str = ""
+    filename_pattern: str = (
+        r"^(?P<source>.+)_(?P<start>\d{6}(?:\d{2})?)_(?P<end>\d{6}(?:\d{2})?)\.parquet$"
+    )
     timestamp_col: str = "timestamp"
     asset_col: str = "asset_id"
     class_col: str = "class"
@@ -65,7 +78,9 @@ class Config:
         Returns
         -------
         Path
-            ``<data_root>/<asset_id>/<asset_subdir>``. The directory is
-            not required to exist.
+            ``<data_root>/<asset_id>/<asset_subdir>`` (or just
+            ``<data_root>/<asset_id>`` when :attr:`asset_subdir` is
+            empty). The directory is not required to exist.
         """
-        return self.data_root / asset_id / self.asset_subdir
+        folder = self.data_root / asset_id
+        return folder / self.asset_subdir if self.asset_subdir else folder

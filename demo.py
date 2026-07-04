@@ -75,7 +75,6 @@ cfg = Config(
     data_root=DATA_ROOT,
     output_dir=OUTPUT_DIR,
     random_state=RANDOM_SEED,
-    filename_pattern=r"^(?P<asset>[^_]+)_(?P<start>\d{8})_(?P<end>\d{8})\.parquet$",
 )
 
 

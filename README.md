@@ -17,8 +17,12 @@ caller supplies.
 ## Requirements
 
 - Python 3.11+
-- Raw data laid out as `data/{asset_id}/input/{asset_id}_{start}_{end}.parquet`
-  (one asset per folder, ~1 Hz samples, multiple files per asset).
+- Raw data laid out as `data/{asset_id}/{dataname}_{start}_{end}.parquet`
+  (one asset per folder, dates as `YYMMDD` or `YYYYMMDD`). An asset may hold
+  several data sets: files sharing a `dataname` prefix have identical columns
+  and cover different periods (concatenated across time); different prefixes
+  carry different variables, possibly at different sampling rates, and are
+  full-outer-joined on the timestamp at load time.
 - A label table with at least `(asset_id, start, end, class)` — the default
   source is an Excel sheet, but any `LabelSource` implementation works.
 
