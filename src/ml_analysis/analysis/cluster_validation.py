@@ -73,8 +73,11 @@ def hopkins_statistic(
     d_u, _ = nbrs.kneighbors(u_pts)
     u_dists = d_u[:, 0]
 
-    num = np.sum(u_dists ** d)
-    den = num + np.sum(w_dists ** d)
+    # Power-1 distances: the classical `** d` variant overflows/underflows
+    # for high-dimensional data (~100 features collapses the statistic to
+    # nan or 0/1), exactly the regime this toolkit targets.
+    num = np.sum(u_dists)
+    den = num + np.sum(w_dists)
     if den == 0:
         return float("nan")
     return float(num / den)

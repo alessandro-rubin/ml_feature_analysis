@@ -19,6 +19,7 @@ feature family.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Any
@@ -58,9 +59,14 @@ def _safe_test(fn, va: np.ndarray, vb: np.ndarray) -> tuple[float, float]:
     if len(va) < 2 or len(vb) < 2:
         return float("nan"), float("nan")
     try:
-        res = fn(va, vb)
+        # Degenerate inputs (e.g. a group constant in value/rank) make some
+        # scipy tests divide by zero and emit RuntimeWarnings while still
+        # returning NaN. Silence the noise; the NaN result is handled downstream.
+        with warnings.catch_warnings(), np.errstate(divide="ignore", invalid="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            res = fn(va, vb)
         return float(res[0]), float(res[1])
-    except (ValueError, ZeroDivisionError, RuntimeWarning):
+    except (ValueError, ZeroDivisionError):
         return float("nan"), float("nan")
 
 
@@ -198,4 +204,16 @@ class PairwiseSeparability:
                 df = df.head(self.top_n)
             results[(a, b)] = df
 
-        return {"pairs": results}
+        # `pairs` is a dict keyed by class tuples — the store drops it, so the
+        # dashboard/report would lose the volcano + AUC-CI plots. A flattened
+        # copy (one frame, class pair as columns) survives serialization and
+        # is queryable too.
+        if results:
+            pairs_long = pd.concat(
+                [df.assign(class_a=a, class_b=b) for (a, b), df in results.items()],
+                ignore_index=True,
+            )
+        else:
+            pairs_long = pd.DataFrame()
+
+        return {"pairs": results, "pairs_long": pairs_long}

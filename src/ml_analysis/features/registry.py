@@ -14,7 +14,7 @@ helpers in that module or by writing its own ``@feature`` decorators.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 import polars as pl

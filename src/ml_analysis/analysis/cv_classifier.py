@@ -39,7 +39,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold
 
-from ml_analysis.analysis.base import AnalysisContext, prepare_xy
+from ml_analysis.analysis.base import AnalysisContext, prepare_xy, seeded
 
 
 def _expected_calibration_error(
@@ -76,7 +76,7 @@ class CrossValidatedClassifier:
     n_splits: int = 5
     rf_params: dict = field(
         default_factory=lambda: dict(
-            n_estimators=300, max_depth=None, n_jobs=-1, random_state=42
+            n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
         )
     )
 
@@ -141,7 +141,7 @@ class CrossValidatedClassifier:
         )
 
         for k, (tr, te) in enumerate(skf.split(X, y)):
-            model = RandomForestClassifier(**self.rf_params)
+            model = RandomForestClassifier(**seeded(self.rf_params, ctx.cfg))
             model.fit(X[tr], y[tr])
             preds = model.predict(X[te])
             proba: np.ndarray | None = None

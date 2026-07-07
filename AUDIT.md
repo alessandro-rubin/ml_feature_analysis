@@ -1,5 +1,15 @@
 # Audit: `ml_analysis` time-series feature-analysis toolkit
 
+> **Resolved (v0.1).** This is the point-in-time audit (45 tests) that
+> drove the toolkit's evolution. Every finding below has since been
+> addressed: the unsupervised + semi-supervised families (§1), the
+> parallel `to_period` materializer and reported `prepare_xy` null policy
+> (§2), the Hopkins power-1 fix, seed injection, rank-based importance,
+> `PreparedXY` caching, and the `bootstrap_ci` / `_best_k` guards (§3), and
+> the housekeeping — `legacy/` deleted, `readme` pin fixed, CI + CHANGELOG
+> added (§4). See [CHANGELOG.md](CHANGELOG.md) and
+> [PROGRESS.md](PROGRESS.md) for the mapping. Kept as a historical record.
+
 Date: 2026-06-04
 Scope reviewed: full source tree (`config` / `dataset` / `features` / `analysis`
 / `io` / `legacy`), `PLAN.md`, `README.md`, `demo.py`, and the test suite

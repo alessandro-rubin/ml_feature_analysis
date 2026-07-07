@@ -7,6 +7,8 @@ strata, then runs the full pipeline:
 
   data on disk  ->  dataset.build  ->  feature materialisation
                ->  period aggregate  ->  analysis suite
+               ->  separability / anomaly / semi-supervised / changepoint
+               ->  ResultStore run + static HTML report
 
 Run:
     python demo.py
@@ -16,10 +18,17 @@ No external files required — everything is synthesised in demo_data/.
 
 from __future__ import annotations
 
+import io
 import shutil
+import sys
 import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Ensure box-drawing / Unicode output works on legacy console codepages (e.g. cp1252).
+for _stream in (sys.stdout, sys.stderr):
+    if isinstance(_stream, io.TextIOWrapper):
+        _stream.reconfigure(encoding="utf-8")
 
 import matplotlib
 
@@ -29,7 +38,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from ml_analysis import Config
+from ml_analysis import Config, Run
 from ml_analysis.analysis import (
     AnalysisContext,
     ClassifierEvaluation,
@@ -53,14 +62,10 @@ from ml_analysis.features.builtins import (
 )
 from ml_analysis.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
 from ml_analysis.io.stat_plots import (
-    auc_bootstrap_plot,
     calibration_plot,
     cluster_class_heatmap_panel,
-    cv_metric_boxplot,
     diagnostics_panel,
-    importance_stability_plot,
     method_agreement_heatmap,
-    volcano_plot,
 )
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -355,14 +360,18 @@ def save_diagnostics_figures(
         cv_per_fold=cv_result["per_fold"],
     )
     p = output_dir / "demo_diagnostics_panel.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); saved.append(p)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    saved.append(p)
 
     # 2) Method-agreement heatmap (separate — needs its own colorbar)
     agree = stability_result["method_agreement"]
     if not agree.empty:
         fig = method_agreement_heatmap(agree)
         p = output_dir / "demo_method_agreement.png"
-        fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); saved.append(p)
+        fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    saved.append(p)
 
     # 3) Calibration curve (binary: TP-vs-FP subset)
     proba = cv_result.get("oof_proba")
@@ -419,7 +428,8 @@ def save_permutation_null_figure(
         p_value=float(summary["ari_perm_p"]), statistic_name="ARI",
     )
     p = output_dir / "demo_permutation_null_ari.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
     print(f"  Figure saved → {p}")
     return p
 
@@ -437,9 +447,133 @@ def save_calibration_figure(
     prep = prepare_xy(ctx)
     fig = calibration_plot(prep.y, proba[:, 1], n_bins=10)
     p = output_dir / "demo_calibration.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig)
+    fig.savefig(p, dpi=120, bbox_inches="tight")
+    plt.close(fig)
     print(f"  Figure saved → {p}")
     return p
+
+
+# ── 4b. New-capabilities tour (v0.1: unsupervised / semi-supervised / report) ──
+
+def run_new_capabilities(
+    period: pl.DataFrame,
+    events: dict[str, pl.LazyFrame],
+    rng: np.random.Generator,
+) -> None:
+    """Showcase the v0.1 additions on the same synthetic data:
+
+    separability test, anomaly ensemble, correlation structure, MI network,
+    label spreading, PU learning, changepoint + lagged relations on a raw
+    event, and ResultStore + static HTML report persistence.
+    """
+    run = Run(period, target_col="class", cfg=cfg)
+
+    _hr("Separability — are the classes distinguishable at all?")
+    sep = run.separability(
+        n_permutations=200,
+        rf_params={"n_estimators": 100, "n_jobs": -1},
+    )
+    print(sep.frames["summary"].round(4).to_string(index=False))
+
+    _hr("Anomaly detection  (unsupervised; baseline = quiet TN/FN events)")
+    ano = run.anomaly(
+        baseline_filter={"class": ["TN", "FN"]},
+        iforest_params={"n_estimators": 200, "n_jobs": -1},
+    )
+    scores = ano.frames["scores"].merge(
+        period.select("event_id", "class").to_pandas(), on="event_id"
+    )
+    print("  mean ensemble score by true class (bursty TP/FP should rank high):")
+    print(textwrap.indent(
+        scores.groupby("class")["ensemble"].mean().round(3).to_string(), "    "
+    ))
+    top5 = scores.nlargest(5, "ensemble")
+    contributors = ano.objects["top_contributors"]
+    print("\n  top-5 anomalous events and their #1 contributing feature:")
+    for idx, row in top5.iterrows():
+        feat, z = contributors[idx][0]
+        print(f"    {row['event_id']:38s} class={row['class']:3s} "
+              f"score={row['ensemble']:.3f}  ← {feat} (z={z:+.1f})")
+
+    _hr("Correlation structure  (redundant channels)")
+    corr = run.correlation_structure()
+    print(f"  {corr.scalars['n_features']} features → "
+          f"{corr.scalars['n_clusters']} correlation clusters")
+    dups = corr.frames["duplicates"]
+    if len(dups):
+        print("  strongest near-duplicates:")
+        print(textwrap.indent(dups.head(5).round(3).to_string(index=False), "    "))
+
+    _hr("Mutual-information network  (nonlinear dependences, exploratory)")
+    mi = run.mi_network(max_features=15)
+    print(textwrap.indent(mi.frames["edges"].head(5).round(3).to_string(index=False),
+                          "    "))
+
+    _hr("Label spreading  (15% of labels kept, rest recovered)")
+    keep = rng.random(period.height) < 0.15
+    sparse = period.with_columns(
+        pl.when(pl.Series(keep)).then(pl.col("class")).otherwise(None).alias("class")
+    )
+    semi = Run(sparse, target_col="class", cfg=cfg)
+    ls = semi.label_spreading()
+    pred = ls.frames["table"]["predicted_label"].to_numpy()
+    truth = period["class"].to_numpy()
+    acc = float((pred == truth).mean())
+    print(f"  labeled rows used : {ls.scalars['n_labeled']} / {period.height}")
+    print(f"  recovery accuracy : {acc:.1%} on all rows  "
+          "(chance = 25%; TN vs FN are identical by construction, so the "
+          "practical ceiling is ~75%)")
+
+    _hr("PU learning  (only TP labeled positive; who else looks like one?)")
+    pu_labels = pl.when(pl.col("class") == "TP").then(pl.lit("TP")).otherwise(None)
+    pu_run = Run(period.with_columns(pu_labels.alias("class")),
+                 target_col="class", cfg=cfg)
+    pu = pu_run.pu_learning(
+        positive_label="TP", n_iterations=20,
+        rf_params={"n_estimators": 60, "n_jobs": -1},
+    )
+    ranked = pu.frames["ranked_unlabeled"].merge(
+        period.select("event_id", pl.col("class").alias("true_class")).to_pandas(),
+        on="event_id",
+    )
+    print("  top-5 unlabeled events by PU score (FP bursts should surface):")
+    print(textwrap.indent(
+        ranked[["event_id", "true_class", "pu_score"]].head(5)
+        .round(3).to_string(index=False), "    "))
+
+    # Raw-signal analyses need a time-indexed series: take one bursty event.
+    tp_lf = next(
+        lf for lf in events.values()
+        if lf.select(pl.col("class").first()).collect().item() == "TP"
+    )
+    event_df = tp_lf.collect()
+
+    _hr("Changepoint detection  (CUSUM on one raw TP event)")
+    cp = Run(event_df, cfg=cfg).changepoint(channels=["temperature", "vibration"])
+    tbl = cp.frames["table"]
+    if len(tbl):
+        print(textwrap.indent(
+            tbl[["channel", "position", "direction", "statistic"]]
+            .head(5).round(2).to_string(index=False), "    "))
+    else:
+        print("  no regime change detected")
+
+    _hr("Lagged relations  (reference = temperature, exploratory)")
+    lr = Run(event_df, cfg=cfg).lagged_relations(
+        reference="temperature", max_lag=15,
+        channels=["temperature", "vibration", "pressure"],
+    )
+    print(textwrap.indent(lr.frames["table"].round(3).to_string(index=False), "    "))
+    print(f"    note: {lr.scalars['note']}")
+
+    _hr("Persistence  (ResultStore run + self-contained HTML report)")
+    run_dir = run.save(OUTPUT_DIR / "runs", name="demo_run")
+    report = run.report(OUTPUT_DIR / "demo_report.html",
+                        title="ml_analysis demo report")
+    print(f"  Run saved   → {run_dir}  (manifest + parquet, dashboard-ready)")
+    print(f"  Report      → {report}")
+    print("  Dashboard   → streamlit run src/ml_analysis/dashboard/app.py "
+          f"-- --root {OUTPUT_DIR / 'runs'}")
 
 
 # ── 5. Main ───────────────────────────────────────────────────────────────────
@@ -456,7 +590,7 @@ def main() -> None:
     classes = ["TP", "FP", "TN", "FN"]
     replacement_types = ["bearing", "seal"]
 
-    print(f"\n[1/5] Generating synthetic data  ({len(assets)} assets × {len(classes)} classes"
+    print(f"\n[1/6] Generating synthetic data  ({len(assets)} assets × {len(classes)} classes"
           f" × {N_EVENTS_PER_CLASS} events each) ...")
     labels = generate_synthetic_data(
         assets=assets,
@@ -468,10 +602,10 @@ def main() -> None:
     )
     print(f"   Label table: {labels.shape[0]} events")
 
-    print("\n[2/5] Registering features ...")
+    print("\n[2/6] Registering features ...")
     register_features()
 
-    print("\n[3/5] Building event dataset + materialising period aggregates ...")
+    print("\n[3/6] Building event dataset + materialising period aggregates ...")
     events = build(labels, cfg=cfg)
     period = to_period(
         events,
@@ -480,7 +614,7 @@ def main() -> None:
     )
     print(f"   Period table: {period.shape[0]} rows × {period.shape[1]} columns")
 
-    print("\n[4/5] Running analysis suite ...")
+    print("\n[4/6] Running analysis suite ...")
     ctx = AnalysisContext(
         df=period,
         cfg=cfg,
@@ -519,7 +653,7 @@ def main() -> None:
     ]
     results = run_analyses(analyses, ctx)
 
-    print("\n[5/5] Results")
+    print("\n[5/6] Results")
     print_distributions(results["distributions"])
     print_pairwise(results["pairwise"])
     print_pairwise_extended(results["pairwise"])
@@ -558,6 +692,9 @@ def main() -> None:
     save_permutation_null_figure(
         ctx, results["cluster_validation"], OUTPUT_DIR, n_perm=400,
     )
+
+    print("\n[6/6] New capabilities: unsupervised / semi-supervised / persistence")
+    run_new_capabilities(period, events, rng)
 
     print("\nDone.\n")
 

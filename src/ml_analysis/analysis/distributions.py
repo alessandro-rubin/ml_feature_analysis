@@ -17,6 +17,7 @@ location — is visible.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,19 +57,26 @@ def _safe_anova(groups: list[np.ndarray]) -> tuple[float, float]:
         return float("nan"), float("nan")
 
 
-def _safe_anderson(groups: list[np.ndarray]) -> tuple[float, float]:
+def _safe_anderson(groups: list[np.ndarray]) -> tuple[float, float, bool]:
+    """Returns (statistic, p, capped). SciPy floors/caps the A-D p-value to
+    [0.001, 0.25]; ``capped`` flags those so 0.001/0.25 aren't read as exact."""
     if len(groups) < 2 or any(len(g) < 2 for g in groups):
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), False
     try:
-        res = anderson_ksamp(groups, variant="midrank")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=".*p-value (capped|floored).*"
+            )
+            res = anderson_ksamp(groups, variant="midrank")
         # SciPy >= ~1.13 returns a SignificanceResult with a ``pvalue`` field;
         # older versions exposed ``significance_level`` as a percentage.
         p = getattr(res, "pvalue", None)
         if p is None:
             p = float(getattr(res, "significance_level", float("nan"))) / 100.0
-        return float(res.statistic), float(p)
+        capped = bool(np.isclose(p, 0.001) or np.isclose(p, 0.25))
+        return float(res.statistic), float(p), capped
     except (ValueError, OverflowError):
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), False
 
 
 def _safe_levene(groups: list[np.ndarray]) -> tuple[float, float]:
@@ -129,7 +137,7 @@ class DistributionAnalysis:
 
             kw_stat, kw_p = _safe_kruskal(groups)
             anova_f, anova_p = _safe_anova(groups)
-            ad_stat, ad_p = _safe_anderson(groups)
+            ad_stat, ad_p, ad_capped = _safe_anderson(groups)
             lev_stat, lev_p = _safe_levene(groups)
             summary_rows.append({
                 "feature": feat,
@@ -139,6 +147,7 @@ class DistributionAnalysis:
                 "anova_p": anova_p,
                 "ad_stat": ad_stat,
                 "ad_p": ad_p,
+                "ad_p_capped": ad_capped,
                 "levene_stat": lev_stat,
                 "levene_p": lev_p,
             })
