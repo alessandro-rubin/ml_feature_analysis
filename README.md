@@ -1,4 +1,4 @@
-# ml_analysis
+# TESSA — Time-series Event Statistics and Separability Analysis
 
 A modular, polars-first toolkit for analyzing time-series anomaly-detection
 labels across many assets.
@@ -41,20 +41,20 @@ umap-learn), `all`.
 
 ## Package layout
 
-The repo is a uv workspace with two packages: **`tessa`**, the standalone
+The repo is a uv workspace with two packages: **`asset_loader`**, the standalone
 data loader (only dependency: polars — reusable in other projects on the
-same data sources, see `packages/tessa/README.md`), and **`ml_analysis`**,
+same data sources, see `packages/asset_loader/README.md`), and **`tessa`**,
 the analysis pipeline that depends on it.
 
 ```
-packages/tessa/
-  src/tessa/
+packages/asset_loader/
+  src/asset_loader/
     config.py        # LoaderConfig (data root, filename pattern, timestamp col)
     loader.py        # multi-source discovery + lazy loading (load_asset/load_event)
-src/ml_analysis/
-  config.py          # Config dataclass (extends tessa.LoaderConfig)
+src/tessa/
+  config.py          # Config dataclass (extends asset_loader.LoaderConfig)
   labels/            # LabelSource protocol + Excel implementation
-  dataset/           # per-event builder (loader re-exported from tessa)
+  dataset/           # per-event builder (loader re-exported from asset_loader)
   features/          # FeatureSpec / AggSpec registries + materializers
   analysis/          # importance / clustering / classifier / pairwise /
                      # stratified / distributions, plus DAG runner
@@ -65,7 +65,7 @@ src/ml_analysis/
 One-line data access without the pipeline:
 
 ```python
-from tessa import load_asset
+from asset_loader import load_asset
 
 df = load_asset("A1", "path/to/data")                  # entire history, all sources
 df = load_asset("A1", "path/to/data", columns=["x"])   # subset, still one line
@@ -112,11 +112,11 @@ configuration, not new code paths.
 
 ```python
 import polars as pl
-from ml_analysis import Config
-from ml_analysis.labels.excel import ExcelLabelSource
-from ml_analysis.dataset.builder import build
-from ml_analysis.features.materialize import to_period
-from ml_analysis.features import builtins  # registers stock features/aggregators
+from tessa import Config
+from tessa.labels.excel import ExcelLabelSource
+from tessa.dataset.builder import build
+from tessa.features.materialize import to_period
+from tessa.features import builtins  # registers stock features/aggregators
 
 cfg = Config(data_root="data/")
 

@@ -1,4 +1,4 @@
-"""MCP server exposing the ml_analysis pipeline as AI-callable tools.
+"""MCP server exposing the tessa pipeline as AI-callable tools.
 
 Launch as a standalone MCP server:
     python mcp_server.py
@@ -17,14 +17,14 @@ import polars as pl
 import pandas as pd
 from mcp.server.fastmcp import FastMCP
 
-from ml_analysis import Config
-from ml_analysis.labels.excel import ExcelLabelSource
-from ml_analysis.dataset.builder import build
-from ml_analysis.features import builtins  # noqa: F401 – registers default features/aggs
-from ml_analysis.features.registry import default_registry as feat_registry
-from ml_analysis.features.aggregates import default_registry as agg_registry
-from ml_analysis.features.materialize import to_period
-from ml_analysis.analysis import (
+from tessa import Config
+from tessa.labels.excel import ExcelLabelSource
+from tessa.dataset.builder import build
+from tessa.features import builtins  # noqa: F401 – registers default features/aggs
+from tessa.features.registry import default_registry as feat_registry
+from tessa.features.aggregates import default_registry as agg_registry
+from tessa.features.materialize import to_period
+from tessa.analysis import (
     FeatureImportance,
     ClassifierEvaluation,
     DistributionAnalysis,

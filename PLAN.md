@@ -1,4 +1,4 @@
-# ml_analysis — Project Plan
+# tessa — Project Plan
 
 ## Goal
 
@@ -28,7 +28,7 @@ a user provides.
 ## Architecture
 
 ```
-src/ml_analysis/
+src/tessa/
   config.py                # global config, paths, timestamp col, etc.
   dataset/
     loader.py              # (asset_id, start, end) -> LazyFrame
@@ -52,7 +52,7 @@ src/ml_analysis/
   io/
     writers.py             # save figures, tables, parquet outputs
   legacy/
-    ml_analysis.py         # original script, kept until Phase 5
+    tessa.py         # original script, kept until Phase 5
 ```
 
 ### Data flow
@@ -108,8 +108,8 @@ type" are all expressed as configuration, not as new code paths.
 ## Execution phases
 
 ### Phase 0 — scaffolding
-- `pyproject.toml`, `src/ml_analysis/` package skeleton.
-- Move current `ml_analysis.py` into `src/ml_analysis/legacy/` unchanged.
+- `pyproject.toml`, `src/tessa/` package skeleton.
+- Move current `tessa.py` into `src/tessa/legacy/` unchanged.
 - `Config` dataclass (paths, timestamp col, filename pattern).
 - `.gitignore`, empty `tests/`.
 

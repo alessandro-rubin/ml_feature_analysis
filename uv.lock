@@ -15,7 +15,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "ml-analysis",
+    "asset-loader",
     "tessa",
 ]
 
@@ -124,6 +124,26 @@ sdist = { url = "https://files.pythonhosted.org/packages/b9/33/032cdc44182491aa7
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ed/c9/d7977eaacb9df673210491da99e6a247e93df98c715fc43fd136ce1d3d33/arrow-1.4.0-py3-none-any.whl", hash = "sha256:749f0769958ebdc79c173ff0b0670d59051a535fa26e8eba02953dc19eb43205", size = 68797, upload-time = "2025-10-18T17:46:45.663Z" },
 ]
+
+[[package]]
+name = "asset-loader"
+version = "0.1.0"
+source = { editable = "packages/asset_loader" }
+dependencies = [
+    { name = "polars" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "polars", specifier = ">=1.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "asttokens"
@@ -1643,100 +1663,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ml-analysis"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "fastexcel" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-    { name = "polars" },
-    { name = "pyarrow" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "seaborn" },
-    { name = "tessa" },
-    { name = "xlsxwriter" },
-]
-
-[package.optional-dependencies]
-ai = [
-    { name = "anthropic" },
-    { name = "mcp" },
-]
-ai-groq = [
-    { name = "openai" },
-    { name = "python-dotenv" },
-]
-all = [
-    { name = "anthropic" },
-    { name = "hdbscan" },
-    { name = "lightgbm" },
-    { name = "mcp" },
-    { name = "openai" },
-    { name = "pytest" },
-    { name = "python-dotenv" },
-    { name = "ruff" },
-    { name = "umap-learn" },
-    { name = "xgboost" },
-]
-boosting = [
-    { name = "lightgbm" },
-    { name = "xgboost" },
-]
-clustering = [
-    { name = "hdbscan" },
-    { name = "umap-learn" },
-]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
-jupyter = [
-    { name = "jupyter" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'ai'", specifier = ">=0.50.0" },
-    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.50.0" },
-    { name = "fastexcel" },
-    { name = "hdbscan", marker = "extra == 'all'", specifier = ">=0.8" },
-    { name = "hdbscan", marker = "extra == 'clustering'", specifier = ">=0.8" },
-    { name = "jupyter", marker = "extra == 'jupyter'" },
-    { name = "lightgbm", marker = "extra == 'all'", specifier = ">=4.0" },
-    { name = "lightgbm", marker = "extra == 'boosting'", specifier = ">=4.0" },
-    { name = "matplotlib", specifier = ">=3.8" },
-    { name = "mcp", marker = "extra == 'ai'", specifier = ">=1.0.0" },
-    { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0.0" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "openai", marker = "extra == 'ai-groq'", specifier = ">=1.50.0" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=1.50.0" },
-    { name = "openpyxl", specifier = ">=3.1" },
-    { name = "pandas", specifier = ">=2.0" },
-    { name = "polars", specifier = ">=1.0" },
-    { name = "pyarrow", specifier = ">=24.0.0" },
-    { name = "pytest", marker = "extra == 'all'", specifier = ">=8.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "python-dotenv", marker = "extra == 'ai-groq'", specifier = ">=1.0.0" },
-    { name = "python-dotenv", marker = "extra == 'all'", specifier = ">=1.0.0" },
-    { name = "ruff", marker = "extra == 'all'", specifier = ">=0.5" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "scipy", specifier = ">=1.11" },
-    { name = "seaborn", specifier = ">=0.13" },
-    { name = "tessa", editable = "packages/tessa" },
-    { name = "umap-learn", marker = "extra == 'all'", specifier = ">=0.5" },
-    { name = "umap-learn", marker = "extra == 'clustering'", specifier = ">=0.5" },
-    { name = "xgboost", marker = "extra == 'all'", specifier = ">=2.0" },
-    { name = "xgboost", marker = "extra == 'boosting'", specifier = ">=2.0" },
-    { name = "xlsxwriter" },
-]
-provides-extras = ["boosting", "clustering", "jupyter", "dev", "ai", "ai-groq", "all"]
-
-[[package]]
 name = "nbclient"
 version = "0.10.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3163,23 +3089,97 @@ wheels = [
 
 [[package]]
 name = "tessa"
-version = "0.1.0"
-source = { editable = "packages/tessa" }
+version = "0.0.1"
+source = { editable = "." }
 dependencies = [
+    { name = "asset-loader" },
+    { name = "fastexcel" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "openpyxl" },
+    { name = "pandas" },
     { name = "polars" },
+    { name = "pyarrow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "seaborn" },
+    { name = "xlsxwriter" },
 ]
 
 [package.optional-dependencies]
+ai = [
+    { name = "anthropic" },
+    { name = "mcp" },
+]
+ai-groq = [
+    { name = "openai" },
+    { name = "python-dotenv" },
+]
+all = [
+    { name = "anthropic" },
+    { name = "hdbscan" },
+    { name = "lightgbm" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
+    { name = "ruff" },
+    { name = "umap-learn" },
+    { name = "xgboost" },
+]
+boosting = [
+    { name = "lightgbm" },
+    { name = "xgboost" },
+]
+clustering = [
+    { name = "hdbscan" },
+    { name = "umap-learn" },
+]
 dev = [
     { name = "pytest" },
+    { name = "ruff" },
+]
+jupyter = [
+    { name = "jupyter" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", marker = "extra == 'ai'", specifier = ">=0.50.0" },
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.50.0" },
+    { name = "asset-loader", editable = "packages/asset_loader" },
+    { name = "fastexcel" },
+    { name = "hdbscan", marker = "extra == 'all'", specifier = ">=0.8" },
+    { name = "hdbscan", marker = "extra == 'clustering'", specifier = ">=0.8" },
+    { name = "jupyter", marker = "extra == 'jupyter'" },
+    { name = "lightgbm", marker = "extra == 'all'", specifier = ">=4.0" },
+    { name = "lightgbm", marker = "extra == 'boosting'", specifier = ">=4.0" },
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "mcp", marker = "extra == 'ai'", specifier = ">=1.0.0" },
+    { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0.0" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'ai-groq'", specifier = ">=1.50.0" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=1.50.0" },
+    { name = "openpyxl", specifier = ">=3.1" },
+    { name = "pandas", specifier = ">=2.0" },
     { name = "polars", specifier = ">=1.0" },
+    { name = "pyarrow", specifier = ">=24.0.0" },
+    { name = "pytest", marker = "extra == 'all'", specifier = ">=8.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "python-dotenv", marker = "extra == 'ai-groq'", specifier = ">=1.0.0" },
+    { name = "python-dotenv", marker = "extra == 'all'", specifier = ">=1.0.0" },
+    { name = "ruff", marker = "extra == 'all'", specifier = ">=0.5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "scikit-learn", specifier = ">=1.4" },
+    { name = "scipy", specifier = ">=1.11" },
+    { name = "seaborn", specifier = ">=0.13" },
+    { name = "umap-learn", marker = "extra == 'all'", specifier = ">=0.5" },
+    { name = "umap-learn", marker = "extra == 'clustering'", specifier = ">=0.5" },
+    { name = "xgboost", marker = "extra == 'all'", specifier = ">=2.0" },
+    { name = "xgboost", marker = "extra == 'boosting'", specifier = ">=2.0" },
+    { name = "xlsxwriter" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["boosting", "clustering", "jupyter", "dev", "ai", "ai-groq", "all"]
 
 [[package]]
 name = "threadpoolctl"

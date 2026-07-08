@@ -1,8 +1,8 @@
 import numpy as np
 import polars as pl
 
-from ml_analysis import Config
-from ml_analysis.analysis import (
+from tessa import Config
+from tessa.analysis import (
     AnalysisContext,
     ClusterValidation,
     CrossValidatedClassifier,

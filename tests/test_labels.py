@@ -3,8 +3,8 @@ from datetime import datetime
 import polars as pl
 import pytest
 
-from ml_analysis import Config
-from ml_analysis.labels import validate
+from tessa import Config
+from tessa.labels import validate
 
 
 def test_validate_passes_clean():

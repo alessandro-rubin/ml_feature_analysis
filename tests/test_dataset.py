@@ -4,8 +4,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from ml_analysis import Config
-from ml_analysis.dataset import build, load_asset, load_event
+from tessa import Config
+from tessa.dataset import build, load_asset, load_event
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def fake_data(tmp_path: Path) -> Config:
 
 
 def test_config_works_as_loader_config(fake_data: Config):
-    """ml_analysis.Config is a tessa.LoaderConfig and drives the loader."""
-    from tessa import LoaderConfig
+    """tessa.Config is a asset_loader.LoaderConfig and drives the loader."""
+    from asset_loader import LoaderConfig
 
     assert isinstance(fake_data, LoaderConfig)
     df = load_event("A1", datetime(2024, 1, 10), datetime(2024, 1, 12), fake_data).collect()
@@ -46,7 +46,7 @@ def test_load_asset_reexported(fake_data: Config, tmp_path: Path):
 
 
 def test_legacy_loader_module_shim():
-    from ml_analysis.dataset.loader import (  # noqa: F401
+    from tessa.dataset.loader import (  # noqa: F401
         discover_files,
         discover_sources,
         load_asset,

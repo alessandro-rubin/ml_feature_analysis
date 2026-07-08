@@ -324,7 +324,7 @@ history (tool calls and results) is billed at full price on each turn.
 3. Add a line to the agent's system prompt describing when to use it
 
 **Add a new label source (e.g. CSV, database):**
-Implement the `LabelSource` protocol from `ml_analysis.labels` and swap it
+Implement the `LabelSource` protocol from `tessa.labels` and swap it
 into `load_labels` — no other changes needed.
 
 **Connect to Claude Desktop:**

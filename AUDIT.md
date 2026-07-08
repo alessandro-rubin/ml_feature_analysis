@@ -1,4 +1,4 @@
-# Audit: `ml_analysis` time-series feature-analysis toolkit
+# Audit: `tessa` time-series feature-analysis toolkit
 
 Date: 2026-06-04
 Scope reviewed: full source tree (`config` / `dataset` / `features` / `analysis`
