@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sparq"
+name = "tessa"
 version = "0.1.0"
-description = "Source-Partitioned Asset paRQuet loader: lazy multi-source time-series loading."
+description = "TESSA (Time-series Event Slicing and Source Alignment): lazy multi-source parquet loading."
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = ["polars>=1.0"]
@@ -14,7 +14,7 @@ dependencies = ["polars>=1.0"]
 dev = ["pytest>=8.0"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sparq"]
+packages = ["src/tessa"]
 
 [tool.ruff]
 line-length = 100

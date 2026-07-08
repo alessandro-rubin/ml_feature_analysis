@@ -16,7 +16,7 @@ resolution-markers = [
 [manifest]
 members = [
     "ml-analysis",
-    "sparq",
+    "tessa",
 ]
 
 [[package]]
@@ -1657,7 +1657,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "seaborn" },
-    { name = "sparq" },
+    { name = "tessa" },
     { name = "xlsxwriter" },
 ]
 
@@ -1727,7 +1727,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.4" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "seaborn", specifier = ">=0.13" },
-    { name = "sparq", editable = "packages/sparq" },
+    { name = "tessa", editable = "packages/tessa" },
     { name = "umap-learn", marker = "extra == 'all'", specifier = ">=0.5" },
     { name = "umap-learn", marker = "extra == 'clustering'", specifier = ">=0.5" },
     { name = "xgboost", marker = "extra == 'all'", specifier = ">=2.0" },
@@ -3108,26 +3108,6 @@ wheels = [
 ]
 
 [[package]]
-name = "sparq"
-version = "0.1.0"
-source = { editable = "packages/sparq" }
-dependencies = [
-    { name = "polars" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "polars", specifier = ">=1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "sse-starlette"
 version = "3.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3180,6 +3160,26 @@ sdist = { url = "https://files.pythonhosted.org/packages/8a/11/965c6fd8e5cc254f1
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/9e/2064975477fdc887e47ad42157e214526dcad8f317a948dee17e1659a62f/terminado-0.18.1-py3-none-any.whl", hash = "sha256:a4468e1b37bb318f8a86514f65814e1afc977cf29b3992a4500d9dd305dcceb0", size = 14154, upload-time = "2024-03-12T14:34:36.569Z" },
 ]
+
+[[package]]
+name = "tessa"
+version = "0.1.0"
+source = { editable = "packages/tessa" }
+dependencies = [
+    { name = "polars" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "polars", specifier = ">=1.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "threadpoolctl"

@@ -31,8 +31,8 @@ def fake_data(tmp_path: Path) -> Config:
 
 
 def test_config_works_as_loader_config(fake_data: Config):
-    """ml_analysis.Config is a sparq.LoaderConfig and drives the loader."""
-    from sparq import LoaderConfig
+    """ml_analysis.Config is a tessa.LoaderConfig and drives the loader."""
+    from tessa import LoaderConfig
 
     assert isinstance(fake_data, LoaderConfig)
     df = load_event("A1", datetime(2024, 1, 10), datetime(2024, 1, 12), fake_data).collect()

@@ -1,4 +1,4 @@
-# SPARQ — Source-Partitioned Asset paRQuet loader
+# TESSA — Time-series Event Slicing and Source Alignment
 
 Lazy, polars-first loading of per-asset time-series that are split across
 parquet files along two axes:
@@ -27,7 +27,7 @@ day. `<dataname>` may contain underscores (e.g.
 
 ```python
 from datetime import datetime
-from sparq import LoaderConfig, load_asset, load_event
+from tessa import LoaderConfig, load_asset, load_event
 
 # One line: entire history of an asset, all sources joined on timestamp.
 df = load_asset("A1", "path/to/data")
@@ -49,7 +49,7 @@ sources, and timestamps should be unique within each source.
 Part of the `ml_feature_analysis` uv workspace. From the repo root:
 
 ```bash
-uv run --package sparq pytest packages/sparq/tests
+uv run --package tessa pytest packages/tessa/tests
 ```
 
 Only runtime dependency: `polars`.

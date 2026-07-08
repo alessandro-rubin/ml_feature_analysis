@@ -1,10 +1,10 @@
 """Lazy multi-source parquet loader for per-asset time-series.
 
 Parquet files are organised on disk as ``<data_root>/<asset_id>/`` (plus an
-optional :attr:`sparq.config.LoaderConfig.asset_subdir`) with each filename
+optional :attr:`tessa.config.LoaderConfig.asset_subdir`) with each filename
 encoding a *source* name and a ``[start, end]`` date range, e.g.
 ``flow_rate_240101_240131.parquet`` (see
-:attr:`sparq.config.LoaderConfig.filename_pattern`).
+:attr:`tessa.config.LoaderConfig.filename_pattern`).
 
 An asset's data may be split along two axes:
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import polars as pl
 
-from sparq.config import LoaderConfig
+from tessa.config import LoaderConfig
 
 
 def _parse_filename(

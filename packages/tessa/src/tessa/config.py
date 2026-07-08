@@ -15,7 +15,7 @@ from pathlib import Path
 
 @dataclass
 class LoaderConfig:
-    """On-disk layout settings consumed by :mod:`sparq.loader`.
+    """On-disk layout settings consumed by :mod:`tessa.loader`.
 
     Parameters
     ----------
@@ -35,7 +35,7 @@ class LoaderConfig:
         belongs to. Files sharing a ``source`` value must have identical
         columns and are concatenated across time; files with different
         ``source`` values carry different variables and are outer-joined
-        on :attr:`timestamp_col` (see :mod:`sparq.loader`). A pattern
+        on :attr:`timestamp_col` (see :mod:`tessa.loader`). A pattern
         without a ``source`` group treats every file as one source (a
         legacy ``asset`` group is used as the source name if present).
         Default matches

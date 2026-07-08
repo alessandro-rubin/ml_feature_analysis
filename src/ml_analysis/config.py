@@ -1,12 +1,12 @@
 """Global configuration shared across the pipeline.
 
 A single :class:`Config` instance carries the on-disk layout (inherited from
-:class:`sparq.LoaderConfig` — where parquet files live and how their
+:class:`tessa.LoaderConfig` — where parquet files live and how their
 filenames encode sources and time ranges), the standard column names used by
 the rest of the package, and miscellaneous settings such as the random seed.
 Every public function that touches the filesystem or produces analysis
 output takes a ``cfg: Config`` argument; the data-loading functions in
-:mod:`sparq` accept it directly since it *is* a ``LoaderConfig``.
+:mod:`tessa` accept it directly since it *is* a ``LoaderConfig``.
 """
 
 from __future__ import annotations
@@ -14,14 +14,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sparq import LoaderConfig
+from tessa import LoaderConfig
 
 
 @dataclass
 class Config(LoaderConfig):
     """Project-wide settings.
 
-    Extends :class:`sparq.LoaderConfig` (``data_root``, ``asset_subdir``,
+    Extends :class:`tessa.LoaderConfig` (``data_root``, ``asset_subdir``,
     ``filename_pattern``, ``timestamp_col``, ``asset_dir()``) with the
     pipeline-level settings below.
 

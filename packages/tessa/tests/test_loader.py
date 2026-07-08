@@ -4,7 +4,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from sparq import LoaderConfig, discover_files, discover_sources, load_asset, load_event
+from tessa import LoaderConfig, discover_files, discover_sources, load_asset, load_event
 
 N_JAN = 24 * 31
 N_FEB = 24 * 28

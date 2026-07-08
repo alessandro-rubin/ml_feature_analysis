@@ -41,20 +41,20 @@ umap-learn), `all`.
 
 ## Package layout
 
-The repo is a uv workspace with two packages: **`sparq`**, the standalone
+The repo is a uv workspace with two packages: **`tessa`**, the standalone
 data loader (only dependency: polars — reusable in other projects on the
-same data sources, see `packages/sparq/README.md`), and **`ml_analysis`**,
+same data sources, see `packages/tessa/README.md`), and **`ml_analysis`**,
 the analysis pipeline that depends on it.
 
 ```
-packages/sparq/
-  src/sparq/
+packages/tessa/
+  src/tessa/
     config.py        # LoaderConfig (data root, filename pattern, timestamp col)
     loader.py        # multi-source discovery + lazy loading (load_asset/load_event)
 src/ml_analysis/
-  config.py          # Config dataclass (extends sparq.LoaderConfig)
+  config.py          # Config dataclass (extends tessa.LoaderConfig)
   labels/            # LabelSource protocol + Excel implementation
-  dataset/           # per-event builder (loader re-exported from sparq)
+  dataset/           # per-event builder (loader re-exported from tessa)
   features/          # FeatureSpec / AggSpec registries + materializers
   analysis/          # importance / clustering / classifier / pairwise /
                      # stratified / distributions, plus DAG runner
@@ -65,7 +65,7 @@ src/ml_analysis/
 One-line data access without the pipeline:
 
 ```python
-from sparq import load_asset
+from tessa import load_asset
 
 df = load_asset("A1", "path/to/data")                  # entire history, all sources
 df = load_asset("A1", "path/to/data", columns=["x"])   # subset, still one line
