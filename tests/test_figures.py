@@ -11,9 +11,9 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis import Config, Run
-from ml_analysis.results import AnalysisResult, ResultStore
-from ml_analysis.results.figures import (
+from tessa import Config, Run
+from tessa.results import AnalysisResult, ResultStore
+from tessa.results.figures import (
     figures_for_result,
     figures_for_run,
     headline_metrics,

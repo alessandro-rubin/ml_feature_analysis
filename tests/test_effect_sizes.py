@@ -1,6 +1,6 @@
 import numpy as np
 
-from ml_analysis.analysis.effect_sizes import (
+from tessa.analysis.effect_sizes import (
     bootstrap_ci,
     cliffs_delta,
     cohens_d,

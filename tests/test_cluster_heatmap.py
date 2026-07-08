@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from ml_analysis import Config
-from ml_analysis.analysis import AnalysisContext, ClusterAnalysis
-from ml_analysis.io.stat_plots import (
+from tessa import Config
+from tessa.analysis import AnalysisContext, ClusterAnalysis
+from tessa.io.stat_plots import (
     cluster_class_heatmap,
     cluster_class_heatmap_panel,
 )

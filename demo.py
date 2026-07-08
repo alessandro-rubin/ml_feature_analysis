@@ -1,5 +1,5 @@
 """
-End-to-end demo for ml_analysis.
+End-to-end demo for tessa.
 
 Generates synthetic ~1 Hz time-series data for three assets, builds a label
 table with four event classes (TP / FP / TN / FN) and two replacement-type
@@ -38,8 +38,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from ml_analysis import Config, Run
-from ml_analysis.analysis import (
+from tessa import Config, Run
+from tessa.analysis import (
     AnalysisContext,
     ClassifierEvaluation,
     ClusterAnalysis,
@@ -52,16 +52,16 @@ from ml_analysis.analysis import (
     Stratified,
     run_analyses,
 )
-from ml_analysis.dataset.builder import build
-from ml_analysis.features import builtins  # noqa: F401 – registers stock features/aggs
-from ml_analysis.features.builtins import (
+from tessa.dataset.builder import build
+from tessa.features import builtins  # noqa: F401 – registers stock features/aggs
+from tessa.features.builtins import (
     make_first_difference,
     make_rolling_mean,
     make_rolling_std,
     make_zscore,
 )
-from ml_analysis.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
-from ml_analysis.io.stat_plots import (
+from tessa.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
+from tessa.io.stat_plots import (
     calibration_plot,
     cluster_class_heatmap_panel,
     diagnostics_panel,
@@ -409,7 +409,7 @@ def save_permutation_null_figure(
     rng = np.random.default_rng(ctx.cfg.random_state)
 
     # Re-encode the true labels exactly the way prepare_xy did (filtered + encoded).
-    from ml_analysis.analysis.base import prepare_xy
+    from tessa.analysis.base import prepare_xy
     prep = prepare_xy(ctx)
     y = prep.y
     mask = np.asarray(labels) != -1
@@ -422,7 +422,7 @@ def save_permutation_null_figure(
         rng.shuffle(perm)
         nulls[i] = adjusted_rand_score(perm, lab_kept)
 
-    from ml_analysis.io.stat_plots import permutation_null_plot
+    from tessa.io.stat_plots import permutation_null_plot
     fig = permutation_null_plot(
         nulls, observed=float(summary["ari"]),
         p_value=float(summary["ari_perm_p"]), statistic_name="ARI",
@@ -443,7 +443,7 @@ def save_calibration_figure(
     proba = cv_result.get("oof_proba")
     if proba is None or proba.shape[1] != 2:
         return None
-    from ml_analysis.analysis.base import prepare_xy
+    from tessa.analysis.base import prepare_xy
     prep = prepare_xy(ctx)
     fig = calibration_plot(prep.y, proba[:, 1], n_bins=10)
     p = output_dir / "demo_calibration.png"
@@ -569,17 +569,17 @@ def run_new_capabilities(
     _hr("Persistence  (ResultStore run + self-contained HTML report)")
     run_dir = run.save(OUTPUT_DIR / "runs", name="demo_run")
     report = run.report(OUTPUT_DIR / "demo_report.html",
-                        title="ml_analysis demo report")
+                        title="tessa demo report")
     print(f"  Run saved   → {run_dir}  (manifest + parquet, dashboard-ready)")
     print(f"  Report      → {report}")
-    print("  Dashboard   → streamlit run src/ml_analysis/dashboard/app.py "
+    print("  Dashboard   → streamlit run src/tessa/dashboard/app.py "
           f"-- --root {OUTPUT_DIR / 'runs'}")
 
 
 # ── 5. Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print("ml_analysis demo — end-to-end pipeline")
+    print("tessa demo — end-to-end pipeline")
 
     # --- Regenerate synthetic data ---
     if DATA_ROOT.exists():

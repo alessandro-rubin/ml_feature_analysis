@@ -8,16 +8,16 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis.analysis import (
+from tessa.analysis import (
     AnalysisContext,
     FeatureImportance,
     NullPolicy,
     prepare_xy,
 )
-from ml_analysis.analysis.cluster_validation import hopkins_statistic
-from ml_analysis.analysis.clustering import ClusterAnalysis
-from ml_analysis.analysis.effect_sizes import bootstrap_ci, cohens_d
-from ml_analysis.config import Config
+from tessa.analysis.cluster_validation import hopkins_statistic
+from tessa.analysis.clustering import ClusterAnalysis
+from tessa.analysis.effect_sizes import bootstrap_ci, cohens_d
+from tessa.config import Config
 
 
 def _toy_df(n_per_class: int = 30, seed: int = 0) -> pl.DataFrame:

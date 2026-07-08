@@ -3,15 +3,15 @@ from datetime import datetime, timedelta
 import polars as pl
 import pytest
 
-from ml_analysis import Config
-from ml_analysis.features import (
+from tessa import Config
+from tessa.features import (
     FeatureRegistry,
     feature,
     to_per_sample,
     to_period,
     to_windowed,
 )
-from ml_analysis.features.aggregates import AggregatorRegistry, aggregate
+from tessa.features.aggregates import AggregatorRegistry, aggregate
 
 
 def _toy_lf(n: int = 60) -> pl.LazyFrame:

@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis.analysis import (
+from tessa.analysis import (
     AnalysisContext,
     AnomalyDetection,
     FeatureImportance,
@@ -14,7 +14,7 @@ from ml_analysis.analysis import (
     prepare_xy,
     run_analyses,
 )
-from ml_analysis.config import Config
+from tessa.config import Config
 
 
 def _unlabeled_df(n: int = 200, n_outliers: int = 8, seed: int = 0) -> pl.DataFrame:

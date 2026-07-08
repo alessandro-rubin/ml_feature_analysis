@@ -9,16 +9,16 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis import Config, Run
-from ml_analysis.analysis import (
+from tessa import Config, Run
+from tessa.analysis import (
     AnalysisContext,
     ChangepointDetection,
     CorrelationStructure,
     LabelSpreadingAnalysis,
     PULearningAnalysis,
 )
-from ml_analysis.analysis.changepoint import cusum_changepoints
-from ml_analysis.results.report import render_html
+from tessa.analysis.changepoint import cusum_changepoints
+from tessa.results.report import render_html
 
 
 def _sparse_label_df(n_per_class=60, n_labeled=8, seed=0) -> pl.DataFrame:
@@ -52,7 +52,7 @@ def test_label_spreading_recovers_masked_labels():
 
 
 def test_label_spreading_skipped_without_target_col():
-    from ml_analysis.analysis import run_analyses
+    from tessa.analysis import run_analyses
 
     df = _sparse_label_df().drop("true_class", "class")
     ctx = AnalysisContext(df=df, cfg=Config())  # no target at all
@@ -160,7 +160,7 @@ def test_html_report_contains_everything(tmp_path: Path):
 
     # render_html also works straight from a loaded store
     run_dir = run.save(tmp_path / "runs", name="r1")
-    from ml_analysis.results import ResultStore
+    from tessa.results import ResultStore
     loaded = ResultStore(tmp_path / "runs").load_run("r1")
     html2 = render_html(loaded, ResultStore(tmp_path / "runs").load_manifest("r1"))
     assert "separability" in html2
@@ -170,4 +170,4 @@ def test_html_report_contains_everything(tmp_path: Path):
 def test_dashboard_app_compiles():
     import py_compile
 
-    py_compile.compile("src/ml_analysis/dashboard/app.py", doraise=True)
+    py_compile.compile("src/tessa/dashboard/app.py", doraise=True)
