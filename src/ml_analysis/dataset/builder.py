@@ -3,7 +3,7 @@
 A *label table* is a :class:`polars.DataFrame` with one row per event and at
 least the columns ``asset_id``, ``start``, ``end``, ``class``. This module
 turns each row into an :class:`Event`, loads the corresponding raw
-time-series via :func:`ml_analysis.dataset.loader.load_event`, and attaches
+time-series via :func:`sparq.load_event`, and attaches
 the label metadata as constant columns. The result is the
 ``{event_id: LazyFrame}`` dict consumed by the materialisers in
 :mod:`ml_analysis.features.materialize`.
@@ -17,8 +17,9 @@ from typing import Iterable
 
 import polars as pl
 
+from sparq import load_event
+
 from ml_analysis.config import Config
-from ml_analysis.dataset.loader import load_event
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ description = "Modular polars-first toolkit for time-series anomaly-detection la
 requires-python = ">=3.11"
 readme = "PLAN.md"
 dependencies = [
+    "sparq",
     "polars>=1.0",
     "pandas>=2.0",
     "numpy>=1.26",
@@ -48,9 +49,15 @@ all = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml_analysis"]
 
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+sparq = { workspace = true }
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages/sparq/tests"]

@@ -41,16 +41,34 @@ umap-learn), `all`.
 
 ## Package layout
 
+The repo is a uv workspace with two packages: **`sparq`**, the standalone
+data loader (only dependency: polars — reusable in other projects on the
+same data sources, see `packages/sparq/README.md`), and **`ml_analysis`**,
+the analysis pipeline that depends on it.
+
 ```
+packages/sparq/
+  src/sparq/
+    config.py        # LoaderConfig (data root, filename pattern, timestamp col)
+    loader.py        # multi-source discovery + lazy loading (load_asset/load_event)
 src/ml_analysis/
-  config.py          # Config dataclass (paths, timestamp col, filename pattern)
+  config.py          # Config dataclass (extends sparq.LoaderConfig)
   labels/            # LabelSource protocol + Excel implementation
-  dataset/           # per-event lazy loader + builder
+  dataset/           # per-event builder (loader re-exported from sparq)
   features/          # FeatureSpec / AggSpec registries + materializers
   analysis/          # importance / clustering / classifier / pairwise /
                      # stratified / distributions, plus DAG runner
   io/                # writers for figures, tables, parquet outputs
   legacy/            # kept until the Phase 5 port is fully verified
+```
+
+One-line data access without the pipeline:
+
+```python
+from sparq import load_asset
+
+df = load_asset("A1", "path/to/data")                  # entire history, all sources
+df = load_asset("A1", "path/to/data", columns=["x"])   # subset, still one line
 ```
 
 ### Data flow
