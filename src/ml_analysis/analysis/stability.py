@@ -41,7 +41,7 @@ class ImportanceStability:
     ci: float = 0.95
     rf_params: dict = field(
         default_factory=lambda: dict(
-            n_estimators=200, max_depth=None, n_jobs=-1, random_state=42
+            n_estimators=200, max_depth=None, n_jobs=-1, random_state=None
         )
     )
 

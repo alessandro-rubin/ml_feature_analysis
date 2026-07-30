@@ -109,6 +109,39 @@ def make_zscore(source: str, window: int) -> None:
         return (pl.col(source) - m) / s
 
 
+def make_constant_counter(source: str) -> None:
+    """Register a constant-sample counter for ``source``.
+
+    The counter starts at 0 and increases by one for each sample whose value
+    equals the previous sample's, resetting to 0 whenever the value changes.
+    In other words it is the 0-based position within the current run of
+    identical consecutive values::
+
+        [0, 1, 6, 2, 3, 3, 3, 7] -> [0, 0, 0, 0, 0, 1, 2, 0]
+
+    Parameters
+    ----------
+    source : str
+        Name of the input column.
+
+    Notes
+    -----
+    The new feature is registered as ``"<source>__const_count"`` in the
+    default feature registry. Because features are materialised one event at
+    a time, the counter never carries a run across event boundaries; the first
+    sample of each event is always 0.
+    """
+    name = f"{source}__const_count"
+
+    @feature(name, deps=(source,))
+    def _():
+        # A new run starts wherever the value differs from the prior sample;
+        # the first sample (null shift) also begins a run. Numbering rows
+        # from 0 within each run gives the per-run counter.
+        run_id = (pl.col(source) != pl.col(source).shift(1)).fill_null(True).cum_sum()
+        return pl.int_range(pl.len()).over(run_id)
+
+
 # ── Aggregators ──────────────────────────────────────────────────────────────
 
 

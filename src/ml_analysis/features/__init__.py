@@ -5,6 +5,7 @@ from ml_analysis.features.aggregates import (
     default_registry as default_aggregator_registry,
 )
 from ml_analysis.features.materialize import to_period, to_per_sample, to_windowed
+from ml_analysis.features.windows import WindowSpec, materialize
 from ml_analysis.features.registry import (
     FeatureRegistry,
     FeatureSpec,
@@ -24,4 +25,6 @@ __all__ = [
     "to_per_sample",
     "to_windowed",
     "to_period",
+    "WindowSpec",
+    "materialize",
 ]

@@ -33,7 +33,8 @@ pip install -e .[dev]
 ```
 
 Optional extras: `boosting` (lightgbm, xgboost), `clustering` (hdbscan,
-umap-learn), `all`.
+umap-learn), `dashboard` (streamlit), `jupyter`, `dev` (pytest, ruff),
+`all`.
 
 ## Package layout
 
@@ -43,10 +44,15 @@ src/ml_analysis/
   labels/            # LabelSource protocol + Excel implementation
   dataset/           # per-event lazy loader + builder
   features/          # FeatureSpec / AggSpec registries + materializers
-  analysis/          # importance / clustering / classifier / pairwise /
-                     # stratified / distributions, plus DAG runner
+  analysis/          # supervised (importance, classifier, pairwise,
+                     # distributions, stratified), separability,
+                     # unsupervised (anomaly, clustering, changepoint,
+                     # correlation), semi-supervised (label spreading, PU),
+                     # relations (lagged, MI network), plus DAG runner
   io/                # writers for figures, tables, parquet outputs
-  legacy/            # kept until the Phase 5 port is fully verified
+  results/           # AnalysisResult, ResultStore, UI-independent figures,
+                     # static HTML report
+  dashboard/         # streamlit run browser over a ResultStore
 ```
 
 ### Data flow
@@ -105,7 +111,37 @@ period = to_period(events, feature_specs=[...], agg_specs=[...])
 # period is one row per event, ready to feed analyses.
 ```
 
-See `tests/` for runnable end-to-end examples on synthetic data.
+### Notebook-first API (`Run`)
+
+`Run` is the primary interface: one object from analysis table to saved
+results, with shared `prepare_xy` caching across analyses.
+
+```python
+from ml_analysis import Config, Run
+
+run = Run(period, target_col="class", cfg=Config(random_state=7))
+
+run.separability().summary()       # "are the classes distinguishable at all?"
+run.importance().frames["table"]   # blended feature ranking
+run.anomaly().summary()            # unsupervised ensemble; target_col optional
+run.figures()                      # curated matplotlib figures per analysis
+
+run.save("outputs/runs")           # parquet + manifest, dashboard-ready
+run.report("outputs/report.html")  # self-contained static HTML
+```
+
+Leave `target_col=None` for fully unsupervised data: label-requiring
+analyses are skipped (with a warning) while anomaly, clustering,
+changepoint, correlation, and relations still run.
+
+Browse a saved run with the dashboard:
+
+```bash
+streamlit run src/ml_analysis/dashboard/app.py -- outputs/runs
+```
+
+`demo.py` runs the whole pipeline end-to-end on synthetic data; see
+`tests/` for runnable examples of each analysis.
 
 ## Statistical tests and corroboration
 
@@ -122,17 +158,32 @@ does, when to use it, and how to interpret the output.
 
 ## Status
 
-Phases 0-6 of [PLAN.md](PLAN.md) have landed:
+v0.2 (101 tests passing). The toolkit covers the full mission scope:
 
-- scaffolding, `Config`
-- per-event lazy dataset loader + builder
-- pluggable label sources (Excel)
-- feature and aggregator registries
-- per-sample / windowed / period materializers
-- pluggable analysis module with DAG runner + ported legacy logic
-- pairwise / stratified / distribution analyses
+- **Foundation** — `Config`, per-event lazy loader + builder, pluggable
+  label sources (Excel), feature/aggregator registries, per-sample /
+  windowed / period materializers (parallel `collect_all`), pluggable
+  analysis module with a DAG runner.
+- **Supervised** — importance (rank-blended), distributions, pairwise,
+  classifier / cross-validated classifier (grouped CV), importance
+  stability, stratified runs.
+- **Separability** — permutation-tested "are the classes distinguishable
+  at all?" with effect sizes and a plain-language verdict.
+- **Unsupervised** — anomaly ensemble (IsolationForest + LOF + robust
+  Mahalanobis) with per-feature attribution, clustering + validation,
+  changepoint (CUSUM), correlation structure.
+- **Semi-supervised** — label spreading, PU learning.
+- **Relations** (exploratory) — lagged relations, MI network.
+- **Consumption** — `Run` notebook facade, `ResultStore` with a
+  reproducibility manifest, UI-independent figures shared by a static HTML
+  report and a Streamlit dashboard.
 
-See [PLAN.md](PLAN.md) for the full design and phase breakdown.
+See [CHANGELOG.md](CHANGELOG.md) for the release history,
+[ARCHITECTURE.md](ARCHITECTURE.md) for the design, build order, and the
+original phased plan (§11 appendix), and
+[STATISTICAL_TESTS.md](STATISTICAL_TESTS.md) for the statistical-rigor
+layer. [AUDIT.md](AUDIT.md) is kept as a historical record of the audit
+that drove the evolution.
 
 ## Development
 
@@ -140,3 +191,6 @@ See [PLAN.md](PLAN.md) for the full design and phase breakdown.
 pytest            # run test suite
 ruff check .      # lint
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `uv sync`, `ruff check`,
+and `pytest` on every push.

@@ -12,12 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import f_classif, mutual_info_classif
 from sklearn.inspection import permutation_importance
 
-from ml_analysis.analysis.base import AnalysisContext, prepare_xy
-
-
-def _minmax(s: pd.Series) -> pd.Series:
-    rng = s.max() - s.min()
-    return (s - s.min()) / rng if rng > 0 else s * 0
+from ml_analysis.analysis.base import AnalysisContext, prepare_xy, seeded
 
 
 @dataclass
@@ -26,7 +21,7 @@ class FeatureImportance:
     requires: tuple[str, ...] = ()
     rf_params: dict = field(
         default_factory=lambda: dict(
-            n_estimators=300, max_depth=None, n_jobs=-1, random_state=42
+            n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
         )
     )
     permutation_repeats: int = 10
@@ -35,7 +30,7 @@ class FeatureImportance:
         prep = prepare_xy(ctx)
         X, y = prep.X, prep.y
 
-        rf = RandomForestClassifier(**self.rf_params)
+        rf = RandomForestClassifier(**seeded(self.rf_params, ctx.cfg))
         rf.fit(X, y)
         mdi = pd.Series(rf.feature_importances_, index=prep.feature_cols, name="rf_mdi")
 
@@ -62,21 +57,23 @@ class FeatureImportance:
         kw = pd.DataFrame(kw_rows).set_index("feature")
 
         mi = pd.Series(
-            mutual_info_classif(X, y, random_state=0),
+            mutual_info_classif(X, y, random_state=ctx.cfg.random_state),
             index=prep.feature_cols,
             name="mutual_info",
         )
 
         results = pd.concat([mdi, perm_mean, perm_std, anova, kw, mi], axis=1)
-        composite = (
-            _minmax(results["rf_mdi"])
-            + _minmax(results["perm_mean"])
-            + _minmax(results["anova_f"])
-            + _minmax(results["kw_stat"])
-            + _minmax(results["mutual_info"])
-        ) / 5
-        results["score_composite"] = composite
-        results = results.sort_values("score_composite", ascending=False)
+        # Rank-based aggregation: per-method ranks are scale-free, so one
+        # feature with a huge unbounded F statistic cannot dominate the blend
+        # the way min-max normalization lets it.
+        method_cols = ["rf_mdi", "perm_mean", "anova_f", "kw_stat", "mutual_info"]
+        ranks = results[method_cols].rank(ascending=False, na_option="bottom")
+        results["mean_rank"] = ranks.mean(axis=1)
+        n = len(results)
+        results["score_composite"] = (
+            1.0 - (results["mean_rank"] - 1.0) / max(n - 1, 1)
+        )
+        results = results.sort_values("mean_rank", ascending=True)
         results.insert(0, "rank", range(1, len(results) + 1))
 
         return {"table": results, "model": rf, "class_names": prep.class_names}
