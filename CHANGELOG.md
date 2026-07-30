@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Asset leakage in cross-validation.** `cv_classifier` and `separability`
+  used `StratifiedKFold(shuffle=True)` with no grouping, so events of the
+  same asset landed in both train and test folds. With several events per
+  asset — the norm — the reported metrics described unseen *events* of
+  known assets, not unseen assets, and were optimistic. Both now default to
+  `StratifiedGroupKFold` grouped on the asset id via the new
+  `base.make_cv` / `base.CVPlan` helpers, which cap `n_splits` at the group
+  count and fall back to ungrouped folds **with a warning** when no asset
+  column is present. Opt out per analysis with `group_by_asset=False`.
+  Results carry `cv_scheme` / `cv_grouped` / `cv_reason` so a number can
+  always be traced to how it was validated.
+- `separability` no longer delegates to `permutation_test_score`, which
+  couples fold grouping to the permutation null (passing `groups` also
+  restricts shuffling to within a group, degenerating the p-value to 1.0
+  when each asset carries one label). Folds are grouped while the null
+  stays global; `permute_within_assets=True` opts into the within-asset
+  null and falls back with a warning when the data can't support it.
+- `prepare_xy` excluded the literal `"asset_id"` instead of
+  `cfg.asset_col`. A numeric asset identifier under a custom name
+  (`Config(asset_col="vin")`) entered the feature matrix. Both names are
+  now excluded via `base.id_cols_for`, and `asset_groups` resolves either
+  as the grouping key.
+- `cv_classifier` reports `n_rows_used` / `n_rows_dropped` from the
+  `prepare_xy` report, so null-driven row loss is visible in the result.
+
 ## 0.2.0 — 2026-06-28
 
 ### Added
