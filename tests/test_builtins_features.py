@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 
 import polars as pl
 
-from ml_analysis import Config
-from ml_analysis.features import to_per_sample
-from ml_analysis.features.builtins import make_constant_counter
+from tessa import Config
+from tessa.features import to_per_sample
+from tessa.features.builtins import make_constant_counter
 
 
 def _lf(values: list, col: str, event_id: str = "e1") -> pl.LazyFrame:

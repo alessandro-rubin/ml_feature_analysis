@@ -8,10 +8,10 @@ import numpy as np
 import polars as pl
 from polars.testing import assert_frame_equal
 
-from ml_analysis import Config
-from ml_analysis.features import FeatureRegistry, feature, to_per_sample, to_period
-from ml_analysis.features.aggregates import AggregatorRegistry, aggregate
-from ml_analysis.features.materialize import _label_cols
+from tessa import Config
+from tessa.features import FeatureRegistry, feature, to_per_sample, to_period
+from tessa.features.aggregates import AggregatorRegistry, aggregate
+from tessa.features.materialize import _label_cols
 
 
 def _reference_to_period_loop(items, cfg, sources, aggregators, feature_names, fr, ar):

@@ -8,9 +8,9 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis.analysis import AnalysisContext, LaggedRelations, MutualInfoNetwork
-from ml_analysis.analysis.relations import lagged_correlations
-from ml_analysis.config import Config
+from tessa.analysis import AnalysisContext, LaggedRelations, MutualInfoNetwork
+from tessa.analysis.relations import lagged_correlations
+from tessa.config import Config
 
 
 def _lagged_df(n: int = 500, lag: int = 5, seed: int = 0) -> pl.DataFrame:

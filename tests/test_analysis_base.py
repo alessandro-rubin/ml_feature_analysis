@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from ml_analysis import Config
-from ml_analysis.analysis import AnalysisContext, prepare_xy, run_analyses
+from tessa import Config
+from tessa.analysis import AnalysisContext, prepare_xy, run_analyses
 
 
 def _toy_df() -> pl.DataFrame:

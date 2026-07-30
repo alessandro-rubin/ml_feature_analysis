@@ -1,12 +1,13 @@
 def test_import():
-    import ml_analysis
+    import tessa
 
-    assert ml_analysis.__version__
+    assert tessa.__version__
 
 
 def test_config_defaults():
-    from ml_analysis import Config
+    from tessa import Config
 
     cfg = Config()
     assert cfg.timestamp_col == "timestamp"
-    assert cfg.asset_dir("A1").as_posix() == "data/A1/input"
+    assert cfg.asset_dir("A1").as_posix() == "data/A1"
+    assert Config(asset_subdir="input").asset_dir("A1").as_posix() == "data/A1/input"

@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml_analysis import (
+from tessa import (
     AnalysisResult,
     Config,
     Dataset,
@@ -18,8 +18,8 @@ from ml_analysis import (
     WindowSpec,
     materialize,
 )
-from ml_analysis.features import FeatureRegistry
-from ml_analysis.features.aggregates import AggregatorRegistry, aggregate
+from tessa.features import FeatureRegistry
+from tessa.features.aggregates import AggregatorRegistry, aggregate
 
 
 @pytest.fixture

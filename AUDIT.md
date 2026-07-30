@@ -1,4 +1,4 @@
-# Audit: `ml_analysis` time-series feature-analysis toolkit
+# Audit: `tessa` time-series feature-analysis toolkit
 
 > **Resolved (v0.1).** This is the point-in-time audit (45 tests) that
 > drove the toolkit's evolution. Every finding below has since been

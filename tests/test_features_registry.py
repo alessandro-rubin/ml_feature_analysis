@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from ml_analysis.features import FeatureRegistry, feature
+from tessa.features import FeatureRegistry, feature
 
 
 def test_register_and_resolve_topological():

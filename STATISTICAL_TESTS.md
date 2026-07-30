@@ -31,12 +31,12 @@ several independent angles.
 
 ## Multiple-testing correction
 
-`ml_analysis.analysis.multiple_testing` exposes three helpers that take
+`tessa.analysis.multiple_testing` exposes three helpers that take
 a 1-D array of raw p-values and return adjusted p-values in the
 original order. NaNs pass through.
 
 ```python
-from ml_analysis.analysis.multiple_testing import (
+from tessa.analysis.multiple_testing import (
     bonferroni, holm, benjamini_hochberg,
 )
 import numpy as np
@@ -63,7 +63,7 @@ rarely need to call these helpers directly.
 
 ## Effect sizes and distribution distances
 
-`ml_analysis.analysis.effect_sizes` provides:
+`tessa.analysis.effect_sizes` provides:
 
 | Function | Type | Range | Interpretation |
 |---|---|---|---|
@@ -81,7 +81,7 @@ trivially small difference", not "we have a useful discovery".
 `bootstrap_ci` works on any scalar two-sample statistic. Example:
 
 ```python
-from ml_analysis.analysis.effect_sizes import bootstrap_ci, cohens_d
+from tessa.analysis.effect_sizes import bootstrap_ci, cohens_d
 import numpy as np
 
 rng = np.random.default_rng(0)
@@ -96,8 +96,8 @@ For *"do feature `f` distributions differ across classes?"* across all
 K classes at once.
 
 ```python
-from ml_analysis.analysis import AnalysisContext, DistributionAnalysis
-from ml_analysis import Config
+from tessa.analysis import AnalysisContext, DistributionAnalysis
+from tessa import Config
 
 ctx = AnalysisContext(df=period_df, cfg=Config(), target_col="class")
 out = DistributionAnalysis().run(ctx)
@@ -136,7 +136,7 @@ Gaussian-ish or heavy-tailed:
 For *"for this specific pair (A, B), which features discriminate?"*.
 
 ```python
-from ml_analysis.analysis import AnalysisContext, PairwiseSeparability
+from tessa.analysis import AnalysisContext, PairwiseSeparability
 
 # bootstrap_n=0 (default) is fast; >0 enables AUC and Cliff's delta CIs.
 out = PairwiseSeparability(bootstrap_n=500).run(ctx)
@@ -183,7 +183,7 @@ one accuracy number with no uncertainty. `CrossValidatedClassifier`
 runs stratified k-fold and reports a spread.
 
 ```python
-from ml_analysis.analysis import AnalysisContext, CrossValidatedClassifier
+from tessa.analysis import AnalysisContext, CrossValidatedClassifier
 
 out = CrossValidatedClassifier(n_splits=5).run(ctx)
 summary = out["summary"]      # rows = metrics; cols = mean / std / min / max
@@ -228,7 +228,7 @@ composite score. `ImportanceStability` answers two follow-ups:
    ranking?* (Spearman rank correlation)
 
 ```python
-from ml_analysis.analysis import (
+from tessa.analysis import (
     AnalysisContext, FeatureImportance, ImportanceStability, run_analyses,
 )
 
@@ -271,7 +271,7 @@ V-measure as scores. `ClusterValidation` adds the missing
 "is this real?" answers.
 
 ```python
-from ml_analysis.analysis import (
+from tessa.analysis import (
     AnalysisContext, ClusterAnalysis, ClusterValidation, run_analyses,
 )
 
@@ -309,8 +309,8 @@ A "is feature `f` really useful to separate TP from FP?" answer that
 won't fall over on review uses every layer:
 
 ```python
-from ml_analysis import Config
-from ml_analysis.analysis import (
+from tessa import Config
+from tessa.analysis import (
     AnalysisContext, DistributionAnalysis, PairwiseSeparability,
     FeatureImportance, ImportanceStability,
     CrossValidatedClassifier, ClusterAnalysis, ClusterValidation,

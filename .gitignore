@@ -39,3 +39,5 @@ data/
 outputs/
 demo_data/
 demo_outputs/
+
+test_notebook.ipynb

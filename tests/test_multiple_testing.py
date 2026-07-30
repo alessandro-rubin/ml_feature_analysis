@@ -1,6 +1,6 @@
 import numpy as np
 
-from ml_analysis.analysis.multiple_testing import (
+from tessa.analysis.multiple_testing import (
     benjamini_hochberg,
     bonferroni,
     holm,

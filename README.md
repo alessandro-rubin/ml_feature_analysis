@@ -1,4 +1,4 @@
-# ml_analysis
+# TESSA — Time-series Event Statistics and Separability Analysis
 
 A modular, polars-first toolkit for analyzing time-series anomaly-detection
 labels across many assets.
@@ -17,8 +17,12 @@ caller supplies.
 ## Requirements
 
 - Python 3.11+
-- Raw data laid out as `data/{asset_id}/input/{asset_id}_{start}_{end}.parquet`
-  (one asset per folder, ~1 Hz samples, multiple files per asset).
+- Raw data laid out as `data/{asset_id}/{dataname}_{start}_{end}.parquet`
+  (one asset per folder, dates as `YYMMDD` or `YYYYMMDD`). An asset may hold
+  several data sets: files sharing a `dataname` prefix have identical columns
+  and cover different periods (concatenated across time); different prefixes
+  carry different variables, possibly at different sampling rates, and are
+  full-outer-joined on the timestamp at load time.
 - A label table with at least `(asset_id, start, end, class)` — the default
   source is an Excel sheet, but any `LabelSource` implementation works.
 
@@ -38,11 +42,20 @@ umap-learn), `dashboard` (streamlit), `jupyter`, `dev` (pytest, ruff),
 
 ## Package layout
 
+The repo is a uv workspace with two packages: **`asset_loader`**, the standalone
+data loader (only dependency: polars — reusable in other projects on the
+same data sources, see `packages/asset_loader/README.md`), and **`tessa`**,
+the analysis pipeline that depends on it.
+
 ```
-src/ml_analysis/
-  config.py          # Config dataclass (paths, timestamp col, filename pattern)
+packages/asset_loader/
+  src/asset_loader/
+    config.py        # LoaderConfig (data root, filename pattern, timestamp col)
+    loader.py        # multi-source discovery + lazy loading (load_asset/load_event)
+src/tessa/
+  config.py          # Config dataclass (extends asset_loader.LoaderConfig)
   labels/            # LabelSource protocol + Excel implementation
-  dataset/           # per-event lazy loader + builder
+  dataset/           # per-event builder (loader re-exported from asset_loader)
   features/          # FeatureSpec / AggSpec registries + materializers
   analysis/          # supervised (importance, classifier, pairwise,
                      # distributions, stratified), separability,
@@ -53,6 +66,15 @@ src/ml_analysis/
   results/           # AnalysisResult, ResultStore, UI-independent figures,
                      # static HTML report
   dashboard/         # streamlit run browser over a ResultStore
+```
+
+One-line data access without the pipeline:
+
+```python
+from asset_loader import load_asset
+
+df = load_asset("A1", "path/to/data")                  # entire history, all sources
+df = load_asset("A1", "path/to/data", columns=["x"])   # subset, still one line
 ```
 
 ### Data flow
@@ -96,11 +118,11 @@ configuration, not new code paths.
 
 ```python
 import polars as pl
-from ml_analysis import Config
-from ml_analysis.labels.excel import ExcelLabelSource
-from ml_analysis.dataset.builder import build
-from ml_analysis.features.materialize import to_period
-from ml_analysis.features import builtins  # registers stock features/aggregators
+from tessa import Config
+from tessa.labels.excel import ExcelLabelSource
+from tessa.dataset.builder import build
+from tessa.features.materialize import to_period
+from tessa.features import builtins  # registers stock features/aggregators
 
 cfg = Config(data_root="data/")
 
@@ -117,7 +139,7 @@ period = to_period(events, feature_specs=[...], agg_specs=[...])
 results, with shared `prepare_xy` caching across analyses.
 
 ```python
-from ml_analysis import Config, Run
+from tessa import Config, Run
 
 run = Run(period, target_col="class", cfg=Config(random_state=7))
 
@@ -137,7 +159,7 @@ changepoint, correlation, and relations still run.
 Browse a saved run with the dashboard:
 
 ```bash
-streamlit run src/ml_analysis/dashboard/app.py -- outputs/runs
+streamlit run src/tessa/dashboard/app.py -- outputs/runs
 ```
 
 `demo.py` runs the whole pipeline end-to-end on synthetic data; see
