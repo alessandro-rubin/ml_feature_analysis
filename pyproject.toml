@@ -52,5 +52,10 @@ line-length = 100
 target-version = "py311"
 extend-exclude = ["*.ipynb"]
 
+[tool.ruff.lint.per-file-ignores]
+# demo.py must reconfigure console encoding and select the headless matplotlib
+# backend before the imports that depend on them.
+"demo.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages/asset_loader/tests"]
