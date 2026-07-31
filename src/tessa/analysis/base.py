@@ -9,11 +9,25 @@ from typing import Any, Callable, Literal, Protocol
 import numpy as np
 import pandas as pd
 import polars as pl
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 
 from tessa.config import Config
 
 LabelFilter = dict[str, list] | Callable[[pl.DataFrame], pl.DataFrame] | None
+
+
+def id_cols_for(cfg: Config) -> tuple[str, ...]:
+    """Identifier columns that must never become features.
+
+    ``"asset_id"`` is the name :mod:`tessa.dataset.builder` stamps onto every
+    event, while ``cfg.asset_col`` is the name the *label table* uses. They
+    coincide by default but not when the user sets ``Config(asset_col="vin")``
+    and brings their own aggregate table — so both are excluded. A numeric
+    asset identifier leaking into ``X`` would otherwise let a model memorise
+    the asset instead of learning from the signal.
+    """
+    return tuple(dict.fromkeys(("event_id", cfg.asset_col, "asset_id")))
 
 
 def seeded(params: dict, cfg: Config) -> dict:
@@ -161,11 +175,12 @@ def prepare_xy(
     n_in = len(df)
 
     target = ctx.target_col
-    drop = set(drop_cols) | {"event_id", "asset_id", ctx.cfg.timestamp_col}
+    ids_known = id_cols_for(ctx.cfg)
+    drop = set(drop_cols) | set(ids_known) | {ctx.cfg.timestamp_col}
     if target is not None:
         drop.add(target)
 
-    id_cols = [c for c in ("event_id", "asset_id") if c in df.columns]
+    id_cols = [c for c in ids_known if c in df.columns]
     feature_cols = [
         c for c in df.select_dtypes(include="number").columns if c not in drop
     ]
@@ -249,6 +264,123 @@ def prepare_xy(
     )
     ctx._xy_cache[cache_key] = prep
     return prep
+
+
+def asset_groups(prep: PreparedXY, ctx: AnalysisContext) -> np.ndarray | None:
+    """Asset identifier per row of ``prep.X``, or ``None`` if unavailable.
+
+    Used as the ``groups`` argument of a grouped cross-validator so that no
+    asset appears in both a training and a test fold.
+    """
+    if prep.ids is None:
+        return None
+    for col in id_cols_for(ctx.cfg):
+        if col == "event_id":
+            continue  # one event per row: useless as a grouping key
+        if col in prep.ids.columns:
+            return prep.ids[col].to_numpy()
+    return None
+
+
+@dataclass(frozen=True)
+class CVPlan:
+    """A cross-validation splitter together with the groups it respects.
+
+    ``scheme`` and ``reason`` are meant to be reported by the analysis, so
+    that a reader of the metrics can tell whether they describe performance
+    on *unseen assets* or merely on unseen events of known assets.
+    """
+
+    cv: Any
+    groups: np.ndarray | None
+    n_splits: int
+    n_groups: int
+    scheme: str
+    reason: str
+
+    @property
+    def grouped(self) -> bool:
+        return self.groups is not None
+
+    def split(self, X: np.ndarray, y: np.ndarray):
+        return self.cv.split(X, y, groups=self.groups)
+
+
+def make_cv(
+    prep: PreparedXY,
+    ctx: AnalysisContext,
+    n_splits: int = 5,
+    *,
+    group_by_asset: bool = True,
+    warn_on_ungrouped: bool = True,
+) -> CVPlan:
+    """Build a fold splitter that keeps whole assets on one side of the split.
+
+    With several events per asset — the norm — a plain
+    :class:`~sklearn.model_selection.StratifiedKFold` puts events of the same
+    asset in both train and test. The model can then key off asset-specific
+    quirks, and the reported metrics describe *unseen events of known assets*
+    rather than unseen assets, which is optimistic. Grouping on the asset id
+    with :class:`~sklearn.model_selection.StratifiedGroupKFold` removes that
+    leak; ``n_splits`` is capped by the number of groups.
+
+    Falls back to ungrouped stratified folds — with a warning — when no asset
+    column survived preparation or when every row is the same asset.
+    """
+    y = prep.y
+    if y is None:
+        raise ValueError("make_cv needs labels; prepare_xy returned y=None.")
+    n_splits = max(int(n_splits), 2)
+    min_class = int(np.bincount(y).min()) if len(y) else 0
+
+    groups = asset_groups(prep, ctx) if group_by_asset else None
+    n_groups = int(len(np.unique(groups))) if groups is not None else 0
+
+    if groups is not None and n_groups >= 2:
+        eff = min(n_splits, n_groups)
+        if eff < 2:  # unreachable given n_groups >= 2, kept as a guard
+            raise ValueError(f"Cannot build {n_splits}-fold CV over {n_groups} assets.")
+        reason = f"folds are disjoint by asset over {n_groups} assets"
+        if n_groups == len(y):
+            reason += " (one event per asset: grouping is a no-op)"
+        return CVPlan(
+            cv=StratifiedGroupKFold(
+                n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state
+            ),
+            groups=groups,
+            n_splits=eff,
+            n_groups=n_groups,
+            scheme="stratified_group_kfold",
+            reason=reason,
+        )
+
+    if not group_by_asset:
+        reason = "grouping disabled by the caller (group_by_asset=False)"
+    elif groups is None:
+        reason = (
+            "no asset column in the prepared frame, so folds may split events "
+            "of one asset across train and test; metrics can be optimistic"
+        )
+    else:
+        reason = f"all rows belong to a single asset ({n_groups} group)"
+    if warn_on_ungrouped and group_by_asset:
+        warnings.warn(f"Ungrouped cross-validation: {reason}.", stacklevel=3)
+
+    eff = min(n_splits, min_class) if min_class else n_splits
+    if eff < 2:
+        raise ValueError(
+            f"Smallest class has {min_class} rows; need >= 2 for stratified CV."
+        )
+    return CVPlan(
+        cv=StratifiedKFold(
+            n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state
+        ),
+        groups=None,
+        n_splits=eff,
+        n_groups=n_groups,
+        scheme="stratified_kfold",
+        reason=reason,
+    )
 
 
 class Analysis(Protocol):

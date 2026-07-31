@@ -14,6 +14,13 @@ corroborate a single accuracy number:
 Each metric is summarized as mean +/- std across folds with a per-fold
 table for inspection. For binary problems an ECE (expected calibration
 error) is also reported.
+
+Folds are **grouped by asset** by default (``StratifiedGroupKFold``): with
+several events per asset, ungrouped folds put events of one asset in both
+train and test, and the resulting metrics describe unseen *events* rather
+than unseen *assets*. The scheme actually used is reported in the output as
+``cv_scheme`` / ``cv_reason``, so a stale-looking number can always be
+traced back to how it was validated.
 """
 
 from __future__ import annotations
@@ -37,9 +44,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold
-
-from tessa.analysis.base import AnalysisContext, prepare_xy, seeded
+from tessa.analysis.base import AnalysisContext, make_cv, prepare_xy, seeded
 
 
 def _expected_calibration_error(
@@ -74,6 +79,7 @@ class CrossValidatedClassifier:
     name: str = "cv_classifier"
     requires: tuple[str, ...] = ()
     n_splits: int = 5
+    group_by_asset: bool = True
     rf_params: dict = field(
         default_factory=lambda: dict(
             n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
@@ -125,14 +131,13 @@ class CrossValidatedClassifier:
         X = prep.X.values
         y = prep.y
         n_classes = len(prep.class_names)
-        if len(X) < self.n_splits * 2:
-            raise ValueError(
-                f"Need at least {self.n_splits * 2} samples for CV; have {len(X)}"
-            )
-
-        skf = StratifiedKFold(
-            n_splits=self.n_splits, shuffle=True, random_state=ctx.cfg.random_state
+        plan = make_cv(
+            prep, ctx, self.n_splits, group_by_asset=self.group_by_asset
         )
+        if len(X) < plan.n_splits * 2:
+            raise ValueError(
+                f"Need at least {plan.n_splits * 2} samples for CV; have {len(X)}"
+            )
 
         fold_rows = []
         oof_pred = np.empty(len(y), dtype=int)
@@ -140,7 +145,7 @@ class CrossValidatedClassifier:
             np.zeros((len(y), n_classes)) if n_classes >= 2 else None
         )
 
-        for k, (tr, te) in enumerate(skf.split(X, y)):
+        for k, (tr, te) in enumerate(plan.split(X, y)):
             model = RandomForestClassifier(**seeded(self.rf_params, ctx.cfg))
             model.fit(X[tr], y[tr])
             preds = model.predict(X[te])
@@ -172,4 +177,16 @@ class CrossValidatedClassifier:
             "oof_pred": oof_pred,
             "oof_proba": oof_proba,
             "class_names": prep.class_names,
+            # Validation provenance: what these metrics actually generalise to.
+            "cv_scheme": plan.scheme,
+            "cv_grouped": plan.grouped,
+            "cv_reason": plan.reason,
+            "cv_n_splits": plan.n_splits,
+            "cv_n_assets": plan.n_groups,
+            "n_rows_used": int(len(X)),
+            "n_rows_dropped": (
+                int(prep.report.n_rows_in - prep.report.n_rows_out)
+                if prep.report is not None
+                else 0
+            ),
         }
