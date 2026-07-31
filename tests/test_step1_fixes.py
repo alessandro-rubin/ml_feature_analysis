@@ -25,12 +25,14 @@ def _toy_df(n_per_class: int = 30, seed: int = 0) -> pl.DataFrame:
     rows = []
     for cls, shift in (("A", 0.0), ("B", 2.0)):
         for _ in range(n_per_class):
-            rows.append({
-                "class": cls,
-                "f_sep": float(rng.normal(shift, 1.0)),
-                "f_noise": float(rng.normal(0.0, 1.0)),
-                "f_also": float(rng.normal(shift * 0.5, 1.0)),
-            })
+            rows.append(
+                {
+                    "class": cls,
+                    "f_sep": float(rng.normal(shift, 1.0)),
+                    "f_noise": float(rng.normal(0.0, 1.0)),
+                    "f_also": float(rng.normal(shift * 0.5, 1.0)),
+                }
+            )
     return pl.DataFrame(rows)
 
 
@@ -39,6 +41,7 @@ def _ctx(df: pl.DataFrame, seed: int = 42, **kwargs) -> AnalysisContext:
 
 
 # ── Seed injection ──────────────────────────────────────────────────────────
+
 
 def test_config_seed_reaches_the_forest():
     df = _toy_df()
@@ -66,11 +69,12 @@ def test_explicit_random_state_wins_over_config():
 
 # ── Rank-based composite ────────────────────────────────────────────────────
 
+
 def test_composite_is_rank_based_and_bounded():
     df = _toy_df()
-    out = FeatureImportance(
-        permutation_repeats=2, rf_params={"n_estimators": 30, "n_jobs": 1}
-    ).run(_ctx(df))
+    out = FeatureImportance(permutation_repeats=2, rf_params={"n_estimators": 30, "n_jobs": 1}).run(
+        _ctx(df)
+    )
     tbl = out["table"]
     assert "mean_rank" in tbl.columns
     assert tbl["score_composite"].between(0, 1).all()
@@ -81,13 +85,16 @@ def test_composite_is_rank_based_and_bounded():
 
 # ── Hopkins in high dimension ───────────────────────────────────────────────
 
+
 def test_hopkins_no_overflow_at_100_features():
     rng = np.random.default_rng(0)
     # two tight Gaussian blobs in 100-D -> strongly clustered
-    X = np.vstack([
-        rng.normal(0, 0.1, size=(100, 100)),
-        rng.normal(5, 0.1, size=(100, 100)),
-    ])
+    X = np.vstack(
+        [
+            rng.normal(0, 0.1, size=(100, 100)),
+            rng.normal(5, 0.1, size=(100, 100)),
+        ]
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)  # overflow would raise
         h = hopkins_statistic(X, rng=rng)
@@ -96,6 +103,7 @@ def test_hopkins_no_overflow_at_100_features():
 
 
 # ── prepare_xy null policies + report + cache ───────────────────────────────
+
 
 def _df_with_nulls() -> pl.DataFrame:
     df = _toy_df(n_per_class=20)
@@ -149,6 +157,7 @@ def test_prepare_xy_is_cached_on_context():
 
 # ── bootstrap_ci surfaces resample failures ─────────────────────────────────
 
+
 def test_bootstrap_ci_warns_on_failing_resamples():
     rng = np.random.default_rng(0)
     a = rng.normal(0, 1, 30)
@@ -168,13 +177,16 @@ def test_bootstrap_ci_warns_on_failing_resamples():
 
 # ── _best_k edge guard ──────────────────────────────────────────────────────
 
+
 def test_best_k_with_two_candidates():
     rng = np.random.default_rng(0)
-    X = np.vstack([
-        rng.normal(0, 0.2, size=(40, 3)),
-        rng.normal(4, 0.2, size=(40, 3)),
-        rng.normal(8, 0.2, size=(40, 3)),
-    ])
+    X = np.vstack(
+        [
+            rng.normal(0, 0.2, size=(40, 3)),
+            rng.normal(4, 0.2, size=(40, 3)),
+            rng.normal(8, 0.2, size=(40, 3)),
+        ]
+    )
     ca = ClusterAnalysis(k_range=(2, 4))  # only k=2,3 -> old code raised
     best_k, inertias, sils = ca._best_k(X, random_state=0)
     assert best_k in (2, 3)

@@ -27,14 +27,16 @@ def _multiclass_df(n_per_class: int = 30) -> pl.DataFrame:
     rows = []
     for cls, shift in (("A", 0.0), ("B", 3.0), ("C", 6.0)):
         for _ in range(n_per_class):
-            rows.append({
-                "event_id": f"{cls}_{rng.integers(1_000_000)}",
-                "class": cls,
-                "f_sep": float(rng.normal(shift, 1.0)),
-                "f_sep2": float(rng.normal(shift * 0.6, 1.0)),
-                "f_weak": float(rng.normal(shift * 0.1, 1.0)),
-                "f_noise": float(rng.normal(0.0, 1.0)),
-            })
+            rows.append(
+                {
+                    "event_id": f"{cls}_{rng.integers(1_000_000)}",
+                    "class": cls,
+                    "f_sep": float(rng.normal(shift, 1.0)),
+                    "f_sep2": float(rng.normal(shift * 0.6, 1.0)),
+                    "f_weak": float(rng.normal(shift * 0.1, 1.0)),
+                    "f_noise": float(rng.normal(0.0, 1.0)),
+                }
+            )
     return pl.DataFrame(rows)
 
 
@@ -54,8 +56,14 @@ def computed_run() -> Run:
 
 
 _EXPECTED = [
-    "distributions", "pairwise", "importance", "importance_stability",
-    "clustering", "cluster_validation", "classifier", "cv_classifier",
+    "distributions",
+    "pairwise",
+    "importance",
+    "importance_stability",
+    "clustering",
+    "cluster_validation",
+    "classifier",
+    "cv_classifier",
     "separability",
 ]
 
@@ -82,7 +90,7 @@ def test_clustering_live_has_scatter_and_heatmap(computed_run: Run):
     figs = computed_run.figures()
     try:
         titles = " ".join(t for t, _ in figs["clustering"]).lower()
-        assert "embedding" in titles          # 2-D scatter
+        assert "embedding" in titles  # 2-D scatter
         assert "elbow" in titles or "k" in titles
         assert "composition" in titles or "cluster" in titles
     finally:
@@ -129,10 +137,7 @@ def test_unknown_result_falls_back_to_array_histograms():
 
 
 def test_headline_metrics_extracted(computed_run: Run):
-    results = {
-        n: AnalysisResult.from_raw(n, r)
-        for n, r in computed_run.ctx.results.items()
-    }
+    results = {n: AnalysisResult.from_raw(n, r) for n, r in computed_run.ctx.results.items()}
     metrics = headline_metrics(results)
     labels = {m["label"] for m in metrics}
     assert "Separability" in labels

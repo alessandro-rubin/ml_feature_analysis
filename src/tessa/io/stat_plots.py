@@ -37,8 +37,14 @@ def volcano_plot(
     else:
         fig = ax.figure
     if p_col not in pair_table.columns or effect_col not in pair_table.columns:
-        ax.text(0.5, 0.5, f"missing {p_col} or {effect_col}",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"missing {p_col} or {effect_col}",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     eff = pair_table[effect_col].abs().values
@@ -47,10 +53,12 @@ def volcano_plot(
     neglog = -np.log10(p_safe)
 
     ax.scatter(eff, neglog, s=22, alpha=0.7, color="steelblue", edgecolor="white")
-    ax.axhline(-np.log10(sig_threshold), color="grey", lw=0.8, ls="--",
-               label=f"p={sig_threshold:g}")
-    ax.axvline(effect_threshold, color="grey", lw=0.8, ls=":",
-               label=f"|effect|={effect_threshold:g}")
+    ax.axhline(
+        -np.log10(sig_threshold), color="grey", lw=0.8, ls="--", label=f"p={sig_threshold:g}"
+    )
+    ax.axvline(
+        effect_threshold, color="grey", lw=0.8, ls=":", label=f"|effect|={effect_threshold:g}"
+    )
 
     score = np.where(np.isfinite(neglog), eff * neglog, -np.inf)
     top_idx = np.argsort(-score)[:annotate_top]
@@ -60,7 +68,9 @@ def volcano_plot(
         ax.annotate(
             pair_table["feature"].iloc[i],
             (eff[i], neglog[i]),
-            xytext=(4, 2), textcoords="offset points", fontsize=8,
+            xytext=(4, 2),
+            textcoords="offset points",
+            fontsize=8,
         )
 
     ax.set_xlabel(f"|{effect_col}|")
@@ -88,8 +98,14 @@ def auc_bootstrap_plot(
         fig = ax.figure
     needed = {"auc", "auc_ci_low", "auc_ci_high", "feature"}
     if not needed.issubset(pair_table.columns):
-        ax.text(0.5, 0.5, "no bootstrap CI columns —\nset bootstrap_n>0",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "no bootstrap CI columns —\nset bootstrap_n>0",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     sub = pair_table.head(top_n).iloc[::-1]
@@ -99,8 +115,7 @@ def auc_bootstrap_plot(
     hi = sub["auc_ci_high"].values
     err = np.vstack([auc - lo, hi - auc])
 
-    ax.errorbar(auc, y, xerr=err, fmt="o", color="steelblue",
-                ecolor="lightsteelblue", capsize=3)
+    ax.errorbar(auc, y, xerr=err, fmt="o", color="steelblue", ecolor="lightsteelblue", capsize=3)
     ax.axvline(0.5, color="grey", lw=0.8, ls="--", label="chance")
     ax.set_yticks(y)
     ax.set_yticklabels(sub["feature"].values, fontsize=8)
@@ -128,8 +143,7 @@ def importance_stability_plot(
     else:
         fig = ax.figure
     if stability_table.empty:
-        ax.text(0.5, 0.5, "empty stability table",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "empty stability table", ha="center", va="center", transform=ax.transAxes)
         return fig
 
     sub = stability_table.head(top_n).iloc[::-1].reset_index(drop=True)
@@ -141,8 +155,7 @@ def importance_stability_plot(
 
     stab_cols = [c for c in sub.columns if c.startswith("stability_top")]
     stab = sub[stab_cols[0]].values if stab_cols else np.ones(len(sub))
-    ax.barh(y, med, color=plt.cm.viridis(stab), alpha=0.85,
-            edgecolor="black", linewidth=0.5)
+    ax.barh(y, med, color=plt.cm.viridis(stab), alpha=0.85, edgecolor="black", linewidth=0.5)
     ax.errorbar(med, y, xerr=err, fmt="none", ecolor="black", capsize=3, lw=1)
 
     ax.set_yticks(y)
@@ -151,8 +164,7 @@ def importance_stability_plot(
     ax.set_title("Importance stability — colour ∝ top-k stability")
     ax.axvline(0, color="grey", lw=0.6)
 
-    sm = plt.cm.ScalarMappable(cmap="viridis",
-                               norm=plt.Normalize(vmin=0, vmax=1))
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=0, vmax=1))
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, pad=0.02)
     cbar.set_label(stab_cols[0] if stab_cols else "stability", fontsize=8)
@@ -169,8 +181,14 @@ def method_agreement_heatmap(
     else:
         fig = ax.figure
     if matrix.empty:
-        ax.text(0.5, 0.5, "empty — run FeatureImportance first",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "empty — run FeatureImportance first",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     data = matrix.values
@@ -184,9 +202,15 @@ def method_agreement_heatmap(
             v = data[i, j]
             if not np.isfinite(v):
                 continue
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center",
-                    fontsize=8,
-                    color="white" if abs(v) > 0.5 else "black")
+            ax.text(
+                j,
+                i,
+                f"{v:.2f}",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white" if abs(v) > 0.5 else "black",
+            )
     fig.colorbar(im, ax=ax, label="Spearman ρ")
     ax.set_title("Importance methods agreement")
     return fig
@@ -204,15 +228,20 @@ def cv_metric_boxplot(
         fig = ax.figure
     if metrics is None:
         metrics = [
-            c for c in (
-                "accuracy", "balanced_accuracy", "f1_macro",
-                "mcc", "cohen_kappa", "roc_auc", "pr_auc",
+            c
+            for c in (
+                "accuracy",
+                "balanced_accuracy",
+                "f1_macro",
+                "mcc",
+                "cohen_kappa",
+                "roc_auc",
+                "pr_auc",
             )
             if c in per_fold.columns
         ]
     data = [per_fold[m].dropna().values for m in metrics]
-    bp = ax.boxplot(data, tick_labels=metrics, showmeans=True,
-                    patch_artist=True)
+    bp = ax.boxplot(data, tick_labels=metrics, showmeans=True, patch_artist=True)
     for patch in bp["boxes"]:
         patch.set_facecolor("lightsteelblue")
     ax.set_ylabel("score")
@@ -270,8 +299,7 @@ def permutation_null_plot(
     else:
         fig = ax.figure
     ax.hist(null_distribution, bins=40, color="lightgrey", edgecolor="white")
-    ax.axvline(observed, color="firebrick", lw=2,
-               label=f"observed = {observed:.3f}")
+    ax.axvline(observed, color="firebrick", lw=2, label=f"observed = {observed:.3f}")
     ax.set_xlabel(statistic_name)
     ax.set_ylabel("count")
     ax.set_title(f"Permutation null  (p = {p_value:.4g})")
@@ -319,8 +347,7 @@ def cluster_class_heatmap(
         fig = ax.figure
 
     if not cluster_ids:
-        ax.text(0.5, 0.5, "no non-noise clusters",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "no non-noise clusters", ha="center", va="center", transform=ax.transAxes)
         ax.set_title(title or "Cluster vs true class")
         return fig
 
@@ -354,8 +381,15 @@ def cluster_class_heatmap(
     shade = color / vmax if vmax else color
     for r in range(len(cluster_ids)):
         for c in range(n_classes):
-            ax.text(c, r, str(counts[r, c]), ha="center", va="center",
-                    fontsize=8, color="white" if shade[r, c] > 0.5 else "black")
+            ax.text(
+                c,
+                r,
+                str(counts[r, c]),
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white" if shade[r, c] > 0.5 else "black",
+            )
 
     fig.colorbar(im, ax=ax, label=cbar_label)
     ax.set_title(title or "Cluster vs true class")
@@ -383,18 +417,30 @@ def cluster_class_heatmap_panel(
     fig, axes = plt.subplots(1, n, figsize=figsize, squeeze=False)
 
     if not all_labels:
-        axes[0, 0].text(0.5, 0.5, "no clusterings to plot",
-                        ha="center", va="center", transform=axes[0, 0].transAxes)
+        axes[0, 0].text(
+            0.5,
+            0.5,
+            "no clusterings to plot",
+            ha="center",
+            va="center",
+            transform=axes[0, 0].transAxes,
+        )
         return fig
 
     for ax, (name, lab) in zip(axes[0], all_labels.items()):
         cluster_class_heatmap(
-            lab, y_true, class_names, normalize=normalize, title=name, ax=ax,
+            lab,
+            y_true,
+            class_names,
+            normalize=normalize,
+            title=name,
+            ax=ax,
         )
 
     fig.suptitle(
         "Cluster composition by true class  (colour = fraction, text = count)",
-        fontsize=12, fontweight="bold",
+        fontsize=12,
+        fontweight="bold",
     )
     fig.tight_layout()
     return fig
@@ -412,24 +458,24 @@ def diagnostics_panel(
     fig, axes = plt.subplots(2, 2, figsize=figsize)
     if pair_table is not None:
         volcano_plot(pair_table, pair_label=pair_label, ax=axes[0, 0])
-        auc_bootstrap_plot(pair_table, top_n=10, pair_label=pair_label,
-                           ax=axes[0, 1])
+        auc_bootstrap_plot(pair_table, top_n=10, pair_label=pair_label, ax=axes[0, 1])
     else:
         for a in (axes[0, 0], axes[0, 1]):
-            a.text(0.5, 0.5, "pair_table not provided",
-                   ha="center", va="center", transform=a.transAxes)
+            a.text(
+                0.5, 0.5, "pair_table not provided", ha="center", va="center", transform=a.transAxes
+            )
     if stability_table is not None:
         importance_stability_plot(stability_table, top_n=10, ax=axes[1, 0])
     else:
-        axes[1, 0].text(0.5, 0.5, "no stability_table",
-                        ha="center", va="center",
-                        transform=axes[1, 0].transAxes)
+        axes[1, 0].text(
+            0.5, 0.5, "no stability_table", ha="center", va="center", transform=axes[1, 0].transAxes
+        )
     if cv_per_fold is not None:
         cv_metric_boxplot(cv_per_fold, ax=axes[1, 1])
     else:
-        axes[1, 1].text(0.5, 0.5, "no cv_per_fold",
-                        ha="center", va="center",
-                        transform=axes[1, 1].transAxes)
+        axes[1, 1].text(
+            0.5, 0.5, "no cv_per_fold", ha="center", va="center", transform=axes[1, 1].transAxes
+        )
     fig.tight_layout()
     return fig
 

@@ -24,10 +24,9 @@ def _reference_to_period_loop(items, cfg, sources, aggregators, feature_names, f
         srcs = sources
         if srcs is None:
             srcs = [
-                c for c in schema.names()
-                if c != cfg.timestamp_col
-                and c not in label_cols
-                and schema[c].is_numeric()
+                c
+                for c in schema.names()
+                if c != cfg.timestamp_col and c not in label_cols and schema[c].is_numeric()
             ]
         agg_exprs = [ar.get(a).apply(s) for s in srcs for a in aggregators]
         label_exprs = [pl.col(c).first().alias(c) for c in label_cols]
@@ -63,14 +62,16 @@ def _events(n_events: int = 7, n_rows: int = 200, seed: int = 0):
     t0 = datetime(2024, 1, 1)
     for i in range(n_events):
         ts = [t0 + timedelta(days=i, seconds=s) for s in range(n_rows)]
-        out[f"e{i}"] = pl.LazyFrame({
-            "timestamp": ts,
-            "x": rng.normal(i, 1.0, n_rows),
-            "y": rng.normal(0.0, 2.0, n_rows),
-            "event_id": [f"e{i}"] * n_rows,
-            "asset_id": [f"A{i % 3}"] * n_rows,
-            "class": ["TP" if i % 2 else "FP"] * n_rows,
-        })
+        out[f"e{i}"] = pl.LazyFrame(
+            {
+                "timestamp": ts,
+                "x": rng.normal(i, 1.0, n_rows),
+                "y": rng.normal(0.0, 2.0, n_rows),
+                "event_id": [f"e{i}"] * n_rows,
+                "asset_id": [f"A{i % 3}"] * n_rows,
+                "class": ["TP" if i % 2 else "FP"] * n_rows,
+            }
+        )
     return out
 
 
@@ -80,11 +81,8 @@ def test_single_query_matches_per_event_loop():
     events = _events()
     aggs = ["mean", "std", "min", "max"]
 
-    new = to_period(events, cfg, aggregators=aggs, feature_registry=fr,
-                    aggregator_registry=ar)
-    old = _reference_to_period_loop(
-        list(events.values()), cfg, None, aggs, None, fr, ar
-    )
+    new = to_period(events, cfg, aggregators=aggs, feature_registry=fr, aggregator_registry=ar)
+    old = _reference_to_period_loop(list(events.values()), cfg, None, aggs, None, fr, ar)
     assert_frame_equal(
         new.select(sorted(new.columns)),
         old.select(sorted(old.columns)),
@@ -96,8 +94,14 @@ def test_rolling_features_do_not_bleed_across_events():
     cfg = Config()
     fr, ar = _registries()
     events = _events(n_events=3, n_rows=50)
-    out = to_period(events, cfg, sources=["x_diff"], aggregators=["mean"],
-                    feature_registry=fr, aggregator_registry=ar)
+    out = to_period(
+        events,
+        cfg,
+        sources=["x_diff"],
+        aggregators=["mean"],
+        feature_registry=fr,
+        aggregator_registry=ar,
+    )
     # diff within each event: mean of diffs == (last - first) / (n - 1).
     # If events bled together, event boundaries would inject huge diffs.
     frames = {k: v.collect() for k, v in events.items()}
@@ -112,8 +116,7 @@ def test_event_order_is_preserved():
     cfg = Config()
     fr, ar = _registries()
     events = _events(n_events=5)
-    out = to_period(events, cfg, aggregators=["mean"], feature_registry=fr,
-                    aggregator_registry=ar)
+    out = to_period(events, cfg, aggregators=["mean"], feature_registry=fr, aggregator_registry=ar)
     assert out["event_id"].to_list() == list(events.keys())
 
 

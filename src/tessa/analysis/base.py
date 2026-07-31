@@ -181,9 +181,7 @@ def prepare_xy(
         drop.add(target)
 
     id_cols = [c for c in ids_known if c in df.columns]
-    feature_cols = [
-        c for c in df.select_dtypes(include="number").columns if c not in drop
-    ]
+    feature_cols = [c for c in df.select_dtypes(include="number").columns if c not in drop]
     X = df[feature_cols].copy()
     ids = df[id_cols].copy() if id_cols else None
 
@@ -205,9 +203,7 @@ def prepare_xy(
     imputed_features: dict[str, float] = {}
 
     if pol.kind == "drop_features":
-        dropped_features = {
-            c: f for c, f in offenders.items() if f > pol.max_feature_null_frac
-        }
+        dropped_features = {c: f for c, f in offenders.items() if f > pol.max_feature_null_frac}
         X = X.drop(columns=list(dropped_features))
     elif pol.kind == "impute_median":
         dropped_features = {c: f for c, f in offenders.items() if f >= 1.0}
@@ -344,9 +340,7 @@ def make_cv(
         if n_groups == len(y):
             reason += " (one event per asset: grouping is a no-op)"
         return CVPlan(
-            cv=StratifiedGroupKFold(
-                n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state
-            ),
+            cv=StratifiedGroupKFold(n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state),
             groups=groups,
             n_splits=eff,
             n_groups=n_groups,
@@ -368,13 +362,9 @@ def make_cv(
 
     eff = min(n_splits, min_class) if min_class else n_splits
     if eff < 2:
-        raise ValueError(
-            f"Smallest class has {min_class} rows; need >= 2 for stratified CV."
-        )
+        raise ValueError(f"Smallest class has {min_class} rows; need >= 2 for stratified CV.")
     return CVPlan(
-        cv=StratifiedKFold(
-            n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state
-        ),
+        cv=StratifiedKFold(n_splits=eff, shuffle=True, random_state=ctx.cfg.random_state),
         groups=None,
         n_splits=eff,
         n_groups=n_groups,
@@ -401,9 +391,7 @@ def _labels_available(a: Analysis, ctx: AnalysisContext) -> bool:
     return ctx.target_col is not None
 
 
-def run_analyses(
-    analyses: list[Analysis], ctx: AnalysisContext
-) -> dict[str, Any]:
+def run_analyses(analyses: list[Analysis], ctx: AnalysisContext) -> dict[str, Any]:
     """Topo-sort by `requires` and execute. Stores each result on ctx.results.
 
     Analyses whose label requirement isn't met by the context (e.g. a

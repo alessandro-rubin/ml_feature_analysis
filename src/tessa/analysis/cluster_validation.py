@@ -135,9 +135,7 @@ class ClusterValidation:
                 if name.startswith("KMeans"):
                     return np.asarray(lab)
         k = max(n_classes, 2)
-        return KMeans(
-            n_clusters=k, random_state=ctx.cfg.random_state, n_init="auto"
-        ).fit_predict(X)
+        return KMeans(n_clusters=k, random_state=ctx.cfg.random_state, n_init="auto").fit_predict(X)
 
     def run(self, ctx: AnalysisContext) -> dict[str, Any]:
         prep = prepare_xy(ctx)
@@ -159,14 +157,18 @@ class ClusterValidation:
         ari_obs, ari_p = _ari_perm_test(y, labels, self.n_permutations, rng)
         v_obs, v_p = _vmeasure_perm_test(y, labels, self.n_permutations, rng)
 
-        summary = pd.DataFrame([{
-            "hopkins": hopkins,
-            "calinski_harabasz": ch,
-            "ari": ari_obs,
-            "ari_perm_p": ari_p,
-            "v_measure": v_obs,
-            "v_measure_perm_p": v_p,
-            "n_permutations": self.n_permutations,
-        }])
+        summary = pd.DataFrame(
+            [
+                {
+                    "hopkins": hopkins,
+                    "calinski_harabasz": ch,
+                    "ari": ari_obs,
+                    "ari_perm_p": ari_p,
+                    "v_measure": v_obs,
+                    "v_measure_perm_p": v_p,
+                    "n_permutations": self.n_permutations,
+                }
+            ]
+        )
 
         return {"summary": summary, "labels_used": labels}

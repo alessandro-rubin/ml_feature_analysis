@@ -24,9 +24,7 @@ from tessa.analysis import (
 from tessa.config import Config
 
 
-def _asset_confounded_frame(
-    n_assets: int = 12, per_asset: int = 5, seed: int = 0
-) -> pl.DataFrame:
+def _asset_confounded_frame(n_assets: int = 12, per_asset: int = 5, seed: int = 0) -> pl.DataFrame:
     """Events whose features encode the *asset*, not the class.
 
     Each asset gets its own feature offset and a class assigned at the asset
@@ -39,13 +37,15 @@ def _asset_confounded_frame(
         offset = float(a) * 10.0
         cls = "TP" if a % 2 == 0 else "FP"
         for _ in range(per_asset):
-            rows.append({
-                "asset_id": f"asset_{a}",
-                "event_id": f"e{len(rows)}",
-                "class": cls,
-                "f1": offset + rng.normal(0, 0.01),
-                "f2": offset * 2 + rng.normal(0, 0.01),
-            })
+            rows.append(
+                {
+                    "asset_id": f"asset_{a}",
+                    "event_id": f"e{len(rows)}",
+                    "class": cls,
+                    "f1": offset + rng.normal(0, 0.01),
+                    "f2": offset * 2 + rng.normal(0, 0.01),
+                }
+            )
     return pl.DataFrame(rows)
 
 
@@ -54,6 +54,7 @@ def _ctx(df: pl.DataFrame, **cfg_kw) -> AnalysisContext:
 
 
 # ── make_cv ──────────────────────────────────────────────────────────────────
+
 
 def test_make_cv_groups_by_asset_and_folds_are_disjoint():
     ctx = _ctx(_asset_confounded_frame())
@@ -116,6 +117,7 @@ def test_make_cv_opt_out_is_silent():
 
 # ── the leak itself ──────────────────────────────────────────────────────────
 
+
 def test_grouped_cv_reports_lower_accuracy_than_leaky_cv():
     """The point of the fix: grouping removes the inflated score."""
     ctx = _ctx(_asset_confounded_frame())
@@ -155,6 +157,7 @@ def test_cv_classifier_oof_covers_every_row_once():
 
 # ── separability ─────────────────────────────────────────────────────────────
 
+
 def test_separability_uses_grouped_folds_and_a_global_null():
     ctx = _ctx(_asset_confounded_frame())
     res = SeparabilityTest(n_splits=4, n_permutations=15).run(ctx)
@@ -172,9 +175,7 @@ def test_separability_within_asset_null_falls_back_when_degenerate():
     """One class per asset makes within-asset shuffling a no-op."""
     ctx = _ctx(_asset_confounded_frame())
     with pytest.warns(UserWarning, match="within-asset shuffling"):
-        res = SeparabilityTest(
-            n_splits=4, n_permutations=10, permute_within_assets=True
-        ).run(ctx)
+        res = SeparabilityTest(n_splits=4, n_permutations=10, permute_within_assets=True).run(ctx)
     assert res["summary"].iloc[0]["permutation_null"] == "global"
 
 
@@ -186,13 +187,15 @@ def test_separability_detects_a_real_signal_under_grouping():
         for j in range(6):
             cls = "TP" if j % 2 == 0 else "FP"
             shift = 3.0 if cls == "TP" else -3.0
-            rows.append({
-                "asset_id": f"asset_{a}",
-                "event_id": f"e{len(rows)}",
-                "class": cls,
-                "f1": shift + rng.normal(0, 0.3),
-                "f2": rng.normal(0, 1.0),
-            })
+            rows.append(
+                {
+                    "asset_id": f"asset_{a}",
+                    "event_id": f"e{len(rows)}",
+                    "class": cls,
+                    "f1": shift + rng.normal(0, 0.3),
+                    "f2": rng.normal(0, 1.0),
+                }
+            )
     ctx = _ctx(pl.DataFrame(rows))
     res = SeparabilityTest(n_splits=4, n_permutations=25).run(ctx)
     s = res["summary"].iloc[0]
@@ -201,6 +204,7 @@ def test_separability_detects_a_real_signal_under_grouping():
 
 
 # ── custom asset column name ─────────────────────────────────────────────────
+
 
 def test_numeric_custom_asset_column_is_not_a_feature():
     """Config(asset_col="vin") with a numeric vin must not leak into X."""

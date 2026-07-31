@@ -47,9 +47,7 @@ from sklearn.metrics import (
 from tessa.analysis.base import AnalysisContext, make_cv, prepare_xy, seeded
 
 
-def _expected_calibration_error(
-    y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10
-) -> float:
+def _expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
     """ECE for binary probabilistic predictions."""
     if len(y_true) == 0:
         return float("nan")
@@ -81,9 +79,7 @@ class CrossValidatedClassifier:
     n_splits: int = 5
     group_by_asset: bool = True
     rf_params: dict = field(
-        default_factory=lambda: dict(
-            n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
-        )
+        default_factory=lambda: dict(n_estimators=300, max_depth=None, n_jobs=-1, random_state=None)
     )
 
     def _per_fold_metrics(
@@ -97,22 +93,16 @@ class CrossValidatedClassifier:
             "accuracy": _safe(accuracy_score, y_true, y_pred),
             "balanced_accuracy": _safe(balanced_accuracy_score, y_true, y_pred),
             "f1_macro": _safe(f1_score, y_true, y_pred, average="macro", zero_division=0),
-            "f1_weighted": _safe(
-                f1_score, y_true, y_pred, average="weighted", zero_division=0
-            ),
+            "f1_weighted": _safe(f1_score, y_true, y_pred, average="weighted", zero_division=0),
             "precision_macro": _safe(
                 precision_score, y_true, y_pred, average="macro", zero_division=0
             ),
-            "recall_macro": _safe(
-                recall_score, y_true, y_pred, average="macro", zero_division=0
-            ),
+            "recall_macro": _safe(recall_score, y_true, y_pred, average="macro", zero_division=0),
             "mcc": _safe(matthews_corrcoef, y_true, y_pred),
             "cohen_kappa": _safe(cohen_kappa_score, y_true, y_pred),
         }
         if y_proba is not None:
-            metrics["log_loss"] = _safe(
-                log_loss, y_true, y_proba, labels=list(range(n_classes))
-            )
+            metrics["log_loss"] = _safe(log_loss, y_true, y_proba, labels=list(range(n_classes)))
             if n_classes == 2:
                 pos = y_proba[:, 1]
                 metrics["roc_auc"] = _safe(roc_auc_score, y_true, pos)
@@ -121,7 +111,11 @@ class CrossValidatedClassifier:
                 metrics["ece"] = _expected_calibration_error(y_true, pos)
             else:
                 metrics["roc_auc_ovr"] = _safe(
-                    roc_auc_score, y_true, y_proba, multi_class="ovr", average="macro",
+                    roc_auc_score,
+                    y_true,
+                    y_proba,
+                    multi_class="ovr",
+                    average="macro",
                     labels=list(range(n_classes)),
                 )
         return metrics
@@ -131,19 +125,13 @@ class CrossValidatedClassifier:
         X = prep.X.values
         y = prep.y
         n_classes = len(prep.class_names)
-        plan = make_cv(
-            prep, ctx, self.n_splits, group_by_asset=self.group_by_asset
-        )
+        plan = make_cv(prep, ctx, self.n_splits, group_by_asset=self.group_by_asset)
         if len(X) < plan.n_splits * 2:
-            raise ValueError(
-                f"Need at least {plan.n_splits * 2} samples for CV; have {len(X)}"
-            )
+            raise ValueError(f"Need at least {plan.n_splits * 2} samples for CV; have {len(X)}")
 
         fold_rows = []
         oof_pred = np.empty(len(y), dtype=int)
-        oof_proba: np.ndarray | None = (
-            np.zeros((len(y), n_classes)) if n_classes >= 2 else None
-        )
+        oof_proba: np.ndarray | None = np.zeros((len(y), n_classes)) if n_classes >= 2 else None
 
         for k, (tr, te) in enumerate(plan.split(X, y)):
             model = RandomForestClassifier(**seeded(self.rf_params, ctx.cfg))
@@ -164,12 +152,14 @@ class CrossValidatedClassifier:
             fold_rows.append(row)
 
         per_fold = pd.DataFrame(fold_rows).set_index("fold")
-        summary = pd.DataFrame({
-            "mean": per_fold.mean(axis=0),
-            "std": per_fold.std(axis=0, ddof=1) if len(per_fold) > 1 else 0.0,
-            "min": per_fold.min(axis=0),
-            "max": per_fold.max(axis=0),
-        })
+        summary = pd.DataFrame(
+            {
+                "mean": per_fold.mean(axis=0),
+                "std": per_fold.std(axis=0, ddof=1) if len(per_fold) > 1 else 0.0,
+                "min": per_fold.min(axis=0),
+                "max": per_fold.max(axis=0),
+            }
+        )
 
         return {
             "per_fold": per_fold,

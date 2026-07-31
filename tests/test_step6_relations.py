@@ -19,12 +19,14 @@ def _lagged_df(n: int = 500, lag: int = 5, seed: int = 0) -> pl.DataFrame:
     cause = rng.normal(0, 1, n + lag)
     effect = cause[:-lag] + 0.1 * rng.normal(0, 1, n)
     t0 = datetime(2024, 1, 1)
-    return pl.DataFrame({
-        "timestamp": [t0 + timedelta(minutes=i) for i in range(n)],
-        "cause": cause[lag:],          # shift so effect[t] ~ cause[t - lag]...
-        "effect": effect,
-        "noise": rng.normal(0, 1, n),
-    })
+    return pl.DataFrame(
+        {
+            "timestamp": [t0 + timedelta(minutes=i) for i in range(n)],
+            "cause": cause[lag:],  # shift so effect[t] ~ cause[t - lag]...
+            "effect": effect,
+            "noise": rng.normal(0, 1, n),
+        }
+    )
 
 
 def test_lagged_correlations_finds_the_lag():
@@ -63,11 +65,13 @@ def test_mi_network_finds_nonlinear_dependence():
     rng = np.random.default_rng(0)
     n = 400
     x = rng.normal(0, 1, n)
-    df = pl.DataFrame({
-        "x": x,
-        "x_squared": x**2 + 0.05 * rng.normal(0, 1, n),  # nonlinear in x
-        "indep": rng.normal(0, 1, n),
-    })
+    df = pl.DataFrame(
+        {
+            "x": x,
+            "x_squared": x**2 + 0.05 * rng.normal(0, 1, n),  # nonlinear in x
+            "indep": rng.normal(0, 1, n),
+        }
+    )
     ctx = AnalysisContext(df=df, cfg=Config())
     out = MutualInfoNetwork(edge_threshold=0.1).run(ctx)
     edges = out["edges"]

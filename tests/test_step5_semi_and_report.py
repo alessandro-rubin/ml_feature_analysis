@@ -27,22 +27,24 @@ def _sparse_label_df(n_per_class=60, n_labeled=8, seed=0) -> pl.DataFrame:
     rows = []
     for cls, shift in (("healthy", 0.0), ("fault", 4.0)):
         for i in range(n_per_class):
-            rows.append({
-                "event_id": f"{cls}_{i}",
-                "true_class": cls,
-                "class": cls if i < n_labeled else None,
-                "f_a": float(rng.normal(shift, 1.0)),
-                "f_b": float(rng.normal(shift * 0.5, 1.0)),
-            })
+            rows.append(
+                {
+                    "event_id": f"{cls}_{i}",
+                    "true_class": cls,
+                    "class": cls if i < n_labeled else None,
+                    "f_a": float(rng.normal(shift, 1.0)),
+                    "f_b": float(rng.normal(shift * 0.5, 1.0)),
+                }
+            )
     return pl.DataFrame(rows)
 
 
 # ── label spreading ─────────────────────────────────────────────────────────
 
+
 def test_label_spreading_recovers_masked_labels():
     df = _sparse_label_df()
-    ctx = AnalysisContext(df=df.drop("true_class"), cfg=Config(),
-                          target_col="class")
+    ctx = AnalysisContext(df=df.drop("true_class"), cfg=Config(), target_col="class")
     out = LabelSpreadingAnalysis().run(ctx)
     table = out["table"]
     truth = df["true_class"].to_list()
@@ -63,17 +65,17 @@ def test_label_spreading_skipped_without_target_col():
 
 # ── PU learning ─────────────────────────────────────────────────────────────
 
+
 def test_pu_learning_ranks_hidden_positives_first():
     df = _sparse_label_df(n_per_class=50, n_labeled=10)
     # only positives carry labels: healthy labels removed
     df = df.with_columns(
-        pl.when(pl.col("class") == "fault")
-        .then(pl.lit("fault")).otherwise(None).alias("class")
+        pl.when(pl.col("class") == "fault").then(pl.lit("fault")).otherwise(None).alias("class")
     )
-    ctx = AnalysisContext(df=df.drop("true_class"), cfg=Config(),
-                          target_col="class")
+    ctx = AnalysisContext(df=df.drop("true_class"), cfg=Config(), target_col="class")
     out = PULearningAnalysis(
-        positive_label="fault", n_iterations=15,
+        positive_label="fault",
+        n_iterations=15,
         rf_params={"n_estimators": 30, "n_jobs": 1},
     ).run(ctx)
     ranked = out["ranked_unlabeled"]
@@ -84,13 +86,15 @@ def test_pu_learning_ranks_hidden_positives_first():
 
 
 def test_pu_learning_requires_positive_label():
-    ctx = AnalysisContext(df=_sparse_label_df().drop("true_class"),
-                          cfg=Config(), target_col="class")
+    ctx = AnalysisContext(
+        df=_sparse_label_df().drop("true_class"), cfg=Config(), target_col="class"
+    )
     with pytest.raises(ValueError, match="positive_label"):
         PULearningAnalysis().run(ctx)
 
 
 # ── changepoint ─────────────────────────────────────────────────────────────
+
 
 def test_cusum_finds_injected_shift():
     rng = np.random.default_rng(0)
@@ -111,11 +115,15 @@ def test_changepoint_analysis_per_asset():
         sig = rng.normal(0, 1, n)
         if shift_at:
             sig[shift_at:] += 5.0
-        frames.append(pl.DataFrame({
-            "timestamp": [t0 + timedelta(minutes=i) for i in range(n)],
-            "asset_id": [asset] * n,
-            "temp": sig,
-        }))
+        frames.append(
+            pl.DataFrame(
+                {
+                    "timestamp": [t0 + timedelta(minutes=i) for i in range(n)],
+                    "asset_id": [asset] * n,
+                    "temp": sig,
+                }
+            )
+        )
     ctx = AnalysisContext(df=pl.concat(frames), cfg=Config())
     out = ChangepointDetection().run(ctx)
     table = out["table"]
@@ -125,15 +133,18 @@ def test_changepoint_analysis_per_asset():
 
 # ── correlation structure ───────────────────────────────────────────────────
 
+
 def test_correlation_clusters_duplicates_together():
     rng = np.random.default_rng(0)
     n = 300
     base = rng.normal(0, 1, n)
-    df = pl.DataFrame({
-        "f_orig": base,
-        "f_dup": base * 2.0 + 0.01 * rng.normal(0, 1, n),   # near-duplicate
-        "f_indep": rng.normal(0, 1, n),
-    })
+    df = pl.DataFrame(
+        {
+            "f_orig": base,
+            "f_dup": base * 2.0 + 0.01 * rng.normal(0, 1, n),  # near-duplicate
+            "f_indep": rng.normal(0, 1, n),
+        }
+    )
     ctx = AnalysisContext(df=df, cfg=Config())
     out = CorrelationStructure().run(ctx)
     clusters = out["clusters"].set_index("feature")["cluster"]
@@ -144,6 +155,7 @@ def test_correlation_clusters_duplicates_together():
 
 
 # ── report ──────────────────────────────────────────────────────────────────
+
 
 def test_html_report_contains_everything(tmp_path: Path):
     df = _sparse_label_df(n_per_class=30, n_labeled=30).drop("true_class")
@@ -161,6 +173,7 @@ def test_html_report_contains_everything(tmp_path: Path):
     # render_html also works straight from a loaded store
     run_dir = run.save(tmp_path / "runs", name="r1")
     from tessa.results import ResultStore
+
     loaded = ResultStore(tmp_path / "runs").load_run("r1")
     html2 = render_html(loaded, ResultStore(tmp_path / "runs").load_manifest("r1"))
     assert "separability" in html2

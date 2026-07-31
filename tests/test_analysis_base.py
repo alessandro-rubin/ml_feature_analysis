@@ -19,7 +19,9 @@ def _toy_df() -> pl.DataFrame:
 
 def test_filter_by_dict():
     ctx = AnalysisContext(
-        df=_toy_df(), cfg=Config(), target_col="class",
+        df=_toy_df(),
+        cfg=Config(),
+        target_col="class",
         label_filter={"class": ["A"]},
     )
     out = ctx.filtered()

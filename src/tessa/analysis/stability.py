@@ -40,14 +40,10 @@ class ImportanceStability:
     top_k: int = 10
     ci: float = 0.95
     rf_params: dict = field(
-        default_factory=lambda: dict(
-            n_estimators=200, max_depth=None, n_jobs=-1, random_state=None
-        )
+        default_factory=lambda: dict(n_estimators=200, max_depth=None, n_jobs=-1, random_state=None)
     )
 
-    def _bootstrap_mdi(
-        self, X: np.ndarray, y: np.ndarray, rng: np.random.Generator
-    ) -> np.ndarray:
+    def _bootstrap_mdi(self, X: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         """Returns array shape (n_bootstrap, n_features) of MDI values."""
         n, p = X.shape
         out = np.empty((self.n_bootstrap, p), dtype=float)
@@ -73,7 +69,8 @@ class ImportanceStability:
             return pd.DataFrame()
 
         method_cols = [
-            c for c in ("rf_mdi", "perm_mean", "anova_f", "kw_stat", "mutual_info")
+            c
+            for c in ("rf_mdi", "perm_mean", "anova_f", "kw_stat", "mutual_info")
             if c in tbl.columns
         ]
         if len(method_cols) < 2:
@@ -115,18 +112,24 @@ class ImportanceStability:
         stable_count = np.zeros(X.shape[1], dtype=int)
         n_valid = int(finite_rows.sum())
         for i in np.where(finite_rows)[0]:
-            top = np.argsort(boots[i])[-self.top_k:]
+            top = np.argsort(boots[i])[-self.top_k :]
             stable_count[top] += 1
         stability = stable_count / max(n_valid, 1)
 
-        table = pd.DataFrame({
-            "feature": prep.feature_cols,
-            "mdi_median": median,
-            "mdi_ci_low": lo,
-            "mdi_ci_high": hi,
-            "ci_width": hi - lo,
-            f"stability_top{self.top_k}": stability,
-        }).sort_values("mdi_median", ascending=False).reset_index(drop=True)
+        table = (
+            pd.DataFrame(
+                {
+                    "feature": prep.feature_cols,
+                    "mdi_median": median,
+                    "mdi_ci_low": lo,
+                    "mdi_ci_high": hi,
+                    "ci_width": hi - lo,
+                    f"stability_top{self.top_k}": stability,
+                }
+            )
+            .sort_values("mdi_median", ascending=False)
+            .reset_index(drop=True)
+        )
 
         agreement = self._method_agreement(ctx)
 

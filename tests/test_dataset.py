@@ -24,9 +24,9 @@ def fake_data(tmp_path: Path) -> Config:
     ).write_parquet(folder / "sensor_20240101_20240131.parquet")
 
     ts = pl.datetime_range(datetime(2024, 1, 1), datetime(2024, 1, 31, 22), "2h", eager=True)
-    pl.DataFrame(
-        {cfg.timestamp_col: ts, "z": [float(i) for i in range(len(ts))]}
-    ).write_parquet(folder / "flow_rate_240101_240131.parquet")
+    pl.DataFrame({cfg.timestamp_col: ts, "z": [float(i) for i in range(len(ts))]}).write_parquet(
+        folder / "flow_rate_240101_240131.parquet"
+    )
     return cfg
 
 

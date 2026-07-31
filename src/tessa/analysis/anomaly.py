@@ -95,8 +95,7 @@ class AnomalyDetection:
             mask &= aligned[col].isin(allowed).to_numpy()
         if mask.sum() < 5:
             raise ValueError(
-                f"baseline_filter matched only {int(mask.sum())} rows; "
-                "need at least 5 to fit."
+                f"baseline_filter matched only {int(mask.sum())} rows; need at least 5 to fit."
             )
         return mask
 
@@ -139,14 +138,10 @@ class AnomalyDetection:
         if not raw:
             raise RuntimeError("No anomaly detector produced scores.")
 
-        scores = pd.DataFrame(
-            {name: _rank_normalize(r) for name, r in raw.items()}
-        )
+        scores = pd.DataFrame({name: _rank_normalize(r) for name, r in raw.items()})
         scores["ensemble"] = scores.mean(axis=1)
         if prep.ids is not None:
-            scores = pd.concat(
-                [prep.ids.reset_index(drop=True), scores], axis=1
-            )
+            scores = pd.concat([prep.ids.reset_index(drop=True), scores], axis=1)
 
         # Robust z-score attribution vs the baseline distribution.
         med = np.median(X[base_mask], axis=0)
@@ -159,9 +154,7 @@ class AnomalyDetection:
 
         order = np.argsort(-np.abs(z), axis=1)[:, : self.top_k_contributors]
         feat = np.asarray(prep.feature_cols)
-        top_contributors = [
-            [(feat[j], float(z[i, j])) for j in order[i]] for i in range(len(z))
-        ]
+        top_contributors = [[(feat[j], float(z[i, j])) for j in order[i]] for i in range(len(z))]
 
         return {
             "scores": scores,

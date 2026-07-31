@@ -36,7 +36,7 @@ class AggSpec:
         aggregation expression.
     """
 
-    name: str           # output column suffix, e.g. "mean"
+    name: str  # output column suffix, e.g. "mean"
     factory: AggFactory  # given source col, produce the aggregation expr
 
     def apply(self, source: str) -> pl.Expr:

@@ -35,9 +35,7 @@ import polars as pl
 from asset_loader.config import LoaderConfig
 
 
-def _parse_filename(
-    path: Path, pattern: re.Pattern
-) -> tuple[str, datetime, datetime] | None:
+def _parse_filename(path: Path, pattern: re.Pattern) -> tuple[str, datetime, datetime] | None:
     """Extract the ``(source, start, end)`` triple encoded in a filename.
 
     Returns ``None`` if the filename does not match ``pattern``. The
@@ -106,9 +104,7 @@ def discover_sources(
         # Filename dates have day resolution; the end date covers the
         # whole day, so a file ending 0131 still overlaps a window
         # starting at 0131 20:00.
-        if (start is None or f_end + timedelta(days=1) > start) and (
-            end is None or f_start <= end
-        ):
+        if (start is None or f_end + timedelta(days=1) > start) and (end is None or f_start <= end):
             out.setdefault(source, []).append(f)
     return out
 
@@ -193,8 +189,7 @@ def load_event(
         names = lf.collect_schema().names()
         if ts not in names:
             raise ValueError(
-                f"Source {source!r} of asset {asset_id!r} has no "
-                f"timestamp column {ts!r}"
+                f"Source {source!r} of asset {asset_id!r} has no timestamp column {ts!r}"
             )
         value_cols = [c for c in names if c != ts]
         for c in value_cols:
@@ -214,10 +209,7 @@ def load_event(
     if columns is not None:
         missing = [c for c in columns if c != ts and c not in seen]
         if missing:
-            raise ValueError(
-                f"Columns not found in any source of asset {asset_id!r}: "
-                f"{missing}"
-            )
+            raise ValueError(f"Columns not found in any source of asset {asset_id!r}: {missing}")
     if not frames:
         # Request reduced to the timestamp column alone.
         _, files = min(groups.items())

@@ -73,8 +73,7 @@ class ResultStore:
 
     def runs(self) -> list[str]:
         return sorted(
-            p.name for p in self.root.iterdir()
-            if p.is_dir() and (p / "manifest.json").exists()
+            p.name for p in self.root.iterdir() if p.is_dir() and (p / "manifest.json").exists()
         )
 
     def save_run(
@@ -106,19 +105,19 @@ class ResultStore:
             a_dir = run_dir / analysis_name
             a_dir.mkdir(exist_ok=True)
             for key, frame in res.frames.items():
-                pdf = frame if isinstance(frame, pl.DataFrame) else pl.from_pandas(
-                    frame.reset_index()
-                    if frame.index.name or not frame.index.equals(
-                        pd.RangeIndex(len(frame))
+                pdf = (
+                    frame
+                    if isinstance(frame, pl.DataFrame)
+                    else pl.from_pandas(
+                        frame.reset_index()
+                        if frame.index.name or not frame.index.equals(pd.RangeIndex(len(frame)))
+                        else frame
                     )
-                    else frame
                 )
                 pdf.write_parquet(a_dir / f"{key}.parquet")
             for key, arr in res.arrays.items():
                 np.save(a_dir / f"{key}.npy", arr)
-            (a_dir / "scalars.json").write_text(
-                json.dumps(_jsonable(res.scalars), indent=2)
-            )
+            (a_dir / "scalars.json").write_text(json.dumps(_jsonable(res.scalars), indent=2))
             manifest["analyses"][analysis_name] = {
                 "frames": sorted(res.frames),
                 "arrays": sorted(res.arrays),
@@ -139,13 +138,9 @@ class ResultStore:
         out: dict[str, AnalysisResult] = {}
         for analysis_name, entry in manifest["analyses"].items():
             a_dir = run_dir / analysis_name
-            frames = {
-                key: pl.read_parquet(a_dir / f"{key}.parquet")
-                for key in entry["frames"]
-            }
+            frames = {key: pl.read_parquet(a_dir / f"{key}.parquet") for key in entry["frames"]}
             arrays = {
-                key: np.load(a_dir / f"{key}.npy", allow_pickle=False)
-                for key in entry["arrays"]
+                key: np.load(a_dir / f"{key}.npy", allow_pickle=False) for key in entry["arrays"]
             }
             scalars = json.loads((a_dir / "scalars.json").read_text())
             out[analysis_name] = AnalysisResult(

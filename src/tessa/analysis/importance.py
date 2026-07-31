@@ -20,9 +20,7 @@ class FeatureImportance:
     name: str = "importance"
     requires: tuple[str, ...] = ()
     rf_params: dict = field(
-        default_factory=lambda: dict(
-            n_estimators=300, max_depth=None, n_jobs=-1, random_state=None
-        )
+        default_factory=lambda: dict(n_estimators=300, max_depth=None, n_jobs=-1, random_state=None)
     )
     permutation_repeats: int = 10
 
@@ -35,7 +33,9 @@ class FeatureImportance:
         mdi = pd.Series(rf.feature_importances_, index=prep.feature_cols, name="rf_mdi")
 
         perm = permutation_importance(
-            rf, X, y,
+            rf,
+            X,
+            y,
             n_repeats=self.permutation_repeats,
             random_state=ctx.cfg.random_state,
             n_jobs=-1,
@@ -70,9 +70,7 @@ class FeatureImportance:
         ranks = results[method_cols].rank(ascending=False, na_option="bottom")
         results["mean_rank"] = ranks.mean(axis=1)
         n = len(results)
-        results["score_composite"] = (
-            1.0 - (results["mean_rank"] - 1.0) / max(n - 1, 1)
-        )
+        results["score_composite"] = 1.0 - (results["mean_rank"] - 1.0) / max(n - 1, 1)
         results = results.sort_values("mean_rank", ascending=True)
         results.insert(0, "rank", range(1, len(results) + 1))
 

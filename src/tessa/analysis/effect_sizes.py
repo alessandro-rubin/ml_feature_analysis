@@ -115,9 +115,7 @@ def bootstrap_ci(
     n_failed = 0
     last_err: Exception | None = None
     for i in range(n_resamples):
-        resampled = tuple(
-            a[rng.integers(0, n, size=n)] for a, n in zip(arrs, sizes)
-        )
+        resampled = tuple(a[rng.integers(0, n, size=n)] for a, n in zip(arrs, sizes))
         try:
             stats[i] = stat_fn(*resampled)
         except Exception as err:  # noqa: BLE001 — counted and surfaced below

@@ -64,9 +64,7 @@ def _safe_anderson(groups: list[np.ndarray]) -> tuple[float, float, bool]:
         return float("nan"), float("nan"), False
     try:
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*p-value (capped|floored).*"
-            )
+            warnings.filterwarnings("ignore", message=".*p-value (capped|floored).*")
             res = anderson_ksamp(groups, variant="midrank")
         # SciPy >= ~1.13 returns a SignificanceResult with a ``pvalue`` field;
         # older versions exposed ``significance_level`` as a percentage.
@@ -139,18 +137,20 @@ class DistributionAnalysis:
             anova_f, anova_p = _safe_anova(groups)
             ad_stat, ad_p, ad_capped = _safe_anderson(groups)
             lev_stat, lev_p = _safe_levene(groups)
-            summary_rows.append({
-                "feature": feat,
-                "kw_stat": kw_stat,
-                "kw_p": kw_p,
-                "anova_f": anova_f,
-                "anova_p": anova_p,
-                "ad_stat": ad_stat,
-                "ad_p": ad_p,
-                "ad_p_capped": ad_capped,
-                "levene_stat": lev_stat,
-                "levene_p": lev_p,
-            })
+            summary_rows.append(
+                {
+                    "feature": feat,
+                    "kw_stat": kw_stat,
+                    "kw_p": kw_p,
+                    "anova_f": anova_f,
+                    "anova_p": anova_p,
+                    "ad_stat": ad_stat,
+                    "ad_p": ad_p,
+                    "ad_p_capped": ad_capped,
+                    "levene_stat": lev_stat,
+                    "levene_p": lev_p,
+                }
+            )
 
         per_feature_class = pd.DataFrame(rows)
         summary = pd.DataFrame(summary_rows)
@@ -161,8 +161,7 @@ class DistributionAnalysis:
                 summary[f"{col}_bonferroni"] = bonferroni(summary[col].values)
                 summary[f"{col}_bh_fdr"] = benjamini_hochberg(summary[col].values)
 
-        summary = (
-            summary.sort_values("kw_stat", ascending=False, na_position="last")
-            .reset_index(drop=True)
+        summary = summary.sort_values("kw_stat", ascending=False, na_position="last").reset_index(
+            drop=True
         )
         return {"per_feature_class": per_feature_class, "summary": summary}

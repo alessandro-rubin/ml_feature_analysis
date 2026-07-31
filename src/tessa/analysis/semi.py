@@ -31,8 +31,9 @@ from tessa.analysis.base import AnalysisContext, prepare_xy, seeded
 def _sparse_labels(ctx: AnalysisContext, prep) -> pd.Series:
     """Target values aligned to prep.X rows (nulls = unlabeled)."""
     if ctx.target_col is None:
-        raise ValueError("Semi-supervised analyses need target_col set "
-                         "(its values may be mostly null).")
+        raise ValueError(
+            "Semi-supervised analyses need target_col set (its values may be mostly null)."
+        )
     df = ctx.filtered().to_pandas()
     return df[ctx.target_col].iloc[prep.row_index].reset_index(drop=True)
 
@@ -55,9 +56,7 @@ class LabelSpreadingAnalysis:
         classes = sorted(y_sparse[labeled].unique())
         class_to_int = {c: i for i, c in enumerate(classes)}
         y_enc = np.full(len(y_sparse), -1, dtype=int)  # -1 = unlabeled
-        y_enc[labeled.to_numpy()] = [
-            class_to_int[v] for v in y_sparse[labeled]
-        ]
+        y_enc[labeled.to_numpy()] = [class_to_int[v] for v in y_sparse[labeled]]
 
         Z = StandardScaler().fit_transform(prep.X.to_numpy(dtype=float))
         k = min(self.n_neighbors, max(2, len(Z) - 1))
@@ -69,11 +68,13 @@ class LabelSpreadingAnalysis:
         pred = np.asarray(classes)[np.argmax(proba, axis=1)]
         confidence = proba.max(axis=1)
 
-        table = pd.DataFrame({
-            "given_label": y_sparse,
-            "predicted_label": pred,
-            "confidence": confidence,
-        })
+        table = pd.DataFrame(
+            {
+                "given_label": y_sparse,
+                "predicted_label": pred,
+                "confidence": confidence,
+            }
+        )
         if prep.ids is not None:
             table = pd.concat([prep.ids, table], axis=1)
 
@@ -139,11 +140,13 @@ class PULearningAnalysis:
             score = score_sum / score_cnt
         score[pos_idx] = np.nan  # known positives are not scored
 
-        table = pd.DataFrame({
-            "given_label": y_sparse,
-            "is_known_positive": pos_mask,
-            "pu_score": score,
-        })
+        table = pd.DataFrame(
+            {
+                "given_label": y_sparse,
+                "is_known_positive": pos_mask,
+                "pu_score": score,
+            }
+        )
         if prep.ids is not None:
             table = pd.concat([prep.ids, table], axis=1)
         ranked = (

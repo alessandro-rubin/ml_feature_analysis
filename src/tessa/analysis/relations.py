@@ -25,9 +25,7 @@ from sklearn.feature_selection import mutual_info_regression
 from tessa.analysis.base import AnalysisContext, prepare_xy
 
 
-def lagged_correlations(
-    x: np.ndarray, y: np.ndarray, max_lag: int
-) -> pd.DataFrame:
+def lagged_correlations(x: np.ndarray, y: np.ndarray, max_lag: int) -> pd.DataFrame:
     """Pearson correlation of ``x[t]`` vs ``y[t+lag]`` for each lag.
 
     Positive lag = x leads y. Rows with non-finite values are dropped
@@ -88,29 +86,35 @@ class LaggedRelations:
         rows = []
         for a, b in pairs:
             lc = lagged_correlations(
-                df[a].to_numpy(dtype=float), df[b].to_numpy(dtype=float),
+                df[a].to_numpy(dtype=float),
+                df[b].to_numpy(dtype=float),
                 self.max_lag,
             )
             if lc["correlation"].notna().any():
                 best = lc.iloc[lc["correlation"].abs().idxmax()]
-                rows.append({
-                    "leading": a,
-                    "following": b,
-                    "best_lag": int(best["lag"]),
-                    "correlation_at_best_lag": float(best["correlation"]),
-                    "correlation_at_zero": float(
-                        lc.loc[lc["lag"] == 0, "correlation"].iloc[0]
-                    ),
-                })
+                rows.append(
+                    {
+                        "leading": a,
+                        "following": b,
+                        "best_lag": int(best["lag"]),
+                        "correlation_at_best_lag": float(best["correlation"]),
+                        "correlation_at_zero": float(lc.loc[lc["lag"] == 0, "correlation"].iloc[0]),
+                    }
+                )
         table = (
             pd.DataFrame(rows)
             .sort_values("correlation_at_best_lag", key=abs, ascending=False)
             .reset_index(drop=True)
             if rows
-            else pd.DataFrame(columns=[
-                "leading", "following", "best_lag",
-                "correlation_at_best_lag", "correlation_at_zero",
-            ])
+            else pd.DataFrame(
+                columns=[
+                    "leading",
+                    "following",
+                    "best_lag",
+                    "correlation_at_best_lag",
+                    "correlation_at_zero",
+                ]
+            )
         )
         return {
             "table": table,
@@ -132,10 +136,7 @@ class MutualInfoNetwork:
         prep = prepare_xy(ctx, ignore_target=True)
         X = prep.X
         if X.shape[1] > self.max_features:
-            keep = (
-                X.var().sort_values(ascending=False)
-                .head(self.max_features).index.tolist()
-            )
+            keep = X.var().sort_values(ascending=False).head(self.max_features).index.tolist()
             X = X[keep]
         cols = list(X.columns)
         Xv = X.to_numpy(dtype=float)
@@ -145,7 +146,8 @@ class MutualInfoNetwork:
         for j in range(p):
             others = [i for i in range(p) if i != j]
             vals = mutual_info_regression(
-                Xv[:, others], Xv[:, j],
+                Xv[:, others],
+                Xv[:, j],
                 n_neighbors=self.mi_neighbors,
                 random_state=ctx.cfg.random_state,
             )
@@ -155,11 +157,13 @@ class MutualInfoNetwork:
 
         matrix = pd.DataFrame(mi, index=cols, columns=cols)
         iu = np.triu_indices(p, k=1)
-        edges = pd.DataFrame({
-            "feature_a": np.asarray(cols)[iu[0]],
-            "feature_b": np.asarray(cols)[iu[1]],
-            "mutual_info": mi[iu],
-        })
+        edges = pd.DataFrame(
+            {
+                "feature_a": np.asarray(cols)[iu[0]],
+                "feature_b": np.asarray(cols)[iu[1]],
+                "mutual_info": mi[iu],
+            }
+        )
         edges = (
             edges[edges["mutual_info"] >= self.edge_threshold]
             .sort_values("mutual_info", ascending=False)

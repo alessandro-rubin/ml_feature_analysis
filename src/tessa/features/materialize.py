@@ -32,14 +32,14 @@ from tessa.features.registry import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _label_cols_from_schema(schema: pl.Schema, cfg: Config) -> list[str]:
     """Label/id columns given an already-resolved schema (see `_label_cols`)."""
     candidates = ["event_id", cfg.asset_col, cfg.class_col]
     return [c for c in candidates if c in schema.names()] + [
-        c for c in schema.names()
-        if c not in candidates
-        and c != cfg.timestamp_col
-        and not schema[c].is_numeric()
+        c
+        for c in schema.names()
+        if c not in candidates and c != cfg.timestamp_col and not schema[c].is_numeric()
     ]
 
 
@@ -65,6 +65,7 @@ def _resolve_features(
 
 
 # ── Per-sample ───────────────────────────────────────────────────────────────
+
 
 def to_per_sample(
     lf: pl.LazyFrame,
@@ -103,6 +104,7 @@ def to_per_sample(
 
 
 # ── Windowed (groupby_dynamic) ───────────────────────────────────────────────
+
 
 def to_windowed(
     lf: pl.LazyFrame,
@@ -166,10 +168,9 @@ def to_windowed(
     label_cols = _label_cols(base, cfg)
     if sources is None:
         sources = [
-            c for c in schema.names()
-            if c != cfg.timestamp_col
-            and c not in label_cols
-            and schema[c].is_numeric()
+            c
+            for c in schema.names()
+            if c != cfg.timestamp_col and c not in label_cols and schema[c].is_numeric()
         ]
     aggregators = aggregators or ["mean", "std"]
 
@@ -197,6 +198,7 @@ def to_windowed(
 
 
 # ── Period (one row per event) ───────────────────────────────────────────────
+
 
 def to_period(
     lfs: dict[str, pl.LazyFrame] | Iterable[pl.LazyFrame] | pl.LazyFrame,
@@ -274,10 +276,9 @@ def to_period(
     srcs = sources
     if srcs is None:
         srcs = [
-            c for c in schema.names()
-            if c != cfg.timestamp_col
-            and c not in label_cols
-            and schema[c].is_numeric()
+            c
+            for c in schema.names()
+            if c != cfg.timestamp_col and c not in label_cols and schema[c].is_numeric()
         ]
     agg_exprs = [ar.get(a).apply(s) for s in srcs for a in aggregators]
     label_exprs = [pl.col(c).first().alias(c) for c in label_cols]

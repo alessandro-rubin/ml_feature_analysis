@@ -119,26 +119,26 @@ class ChangepointDetection:
             for ch in channels:
                 for cp in cusum_changepoints(
                     g[ch].to_numpy(),
-                    k=self.drift, h=self.threshold,
+                    k=self.drift,
+                    h=self.threshold,
                     baseline_frac=self.baseline_frac,
                     min_separation=self.min_separation,
                 ):
                     pos = cp["position"]
-                    rows.append({
-                        "asset_id": asset,
-                        "channel": ch,
-                        "position": pos,
-                        "timestamp": (
-                            g[ts_col].iloc[pos] if ts_col in g.columns else None
-                        ),
-                        "direction": cp["direction"],
-                        "statistic": float(cp["statistic"]),
-                    })
+                    rows.append(
+                        {
+                            "asset_id": asset,
+                            "channel": ch,
+                            "position": pos,
+                            "timestamp": (g[ts_col].iloc[pos] if ts_col in g.columns else None),
+                            "direction": cp["direction"],
+                            "statistic": float(cp["statistic"]),
+                        }
+                    )
 
         table = pd.DataFrame(
             rows,
-            columns=["asset_id", "channel", "position", "timestamp",
-                     "direction", "statistic"],
+            columns=["asset_id", "channel", "position", "timestamp", "direction", "statistic"],
         )
         per_channel = (
             table.groupby("channel").size().rename("n_changepoints").reset_index()

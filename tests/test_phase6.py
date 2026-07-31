@@ -16,9 +16,9 @@ def _separable_df(n: int = 60) -> pl.DataFrame:
     half = n // 2
     return pl.DataFrame(
         {
-            "f_sep":   list(rng.normal(0, 1, half)) + list(rng.normal(5, 1, half)),
+            "f_sep": list(rng.normal(0, 1, half)) + list(rng.normal(5, 1, half)),
             "f_noise": list(rng.normal(0, 1, n)),
-            "class":   ["A"] * half + ["B"] * half,
+            "class": ["A"] * half + ["B"] * half,
             "stratum": (["s1"] * (n // 4) + ["s2"] * (n // 4)) * 2,
         }
     )
@@ -42,7 +42,9 @@ def test_distributions_summary_orders_by_kw():
 
 
 def test_stratified_runs_per_value():
-    inner = FeatureImportance(permutation_repeats=2, rf_params={"n_estimators": 50, "n_jobs": -1, "random_state": 0})
+    inner = FeatureImportance(
+        permutation_repeats=2, rf_params={"n_estimators": 50, "n_jobs": -1, "random_state": 0}
+    )
     ctx = AnalysisContext(
         df=_separable_df(),
         cfg=Config(),

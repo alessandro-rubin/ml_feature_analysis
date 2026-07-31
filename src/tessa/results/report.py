@@ -54,8 +54,7 @@ def _figures_html(res: AnalysisResult) -> str:
     parts = []
     for title, fig in figures_for_result(res):
         parts.append(
-            f'<img alt="{html.escape(title)}" '
-            f'src="data:image/png;base64,{_fig_to_b64(fig)}"/>'
+            f'<img alt="{html.escape(title)}" src="data:image/png;base64,{_fig_to_b64(fig)}"/>'
         )
     return "".join(parts)
 
@@ -108,7 +107,7 @@ def render_html(
         if res.objects:
             parts.append(
                 f'<p class="note">not rendered (live objects): '
-                f'{html.escape(", ".join(res.objects))}</p>'
+                f"{html.escape(', '.join(res.objects))}</p>"
             )
 
     parts.append("</body></html>")

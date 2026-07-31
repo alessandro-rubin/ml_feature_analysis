@@ -58,8 +58,10 @@ def materialize(
     """Materialize event frames into the analysis table described by ``spec``."""
     if spec.kind == "event":
         return to_period(
-            lfs, cfg,
-            sources=sources, aggregators=aggregators,
+            lfs,
+            cfg,
+            sources=sources,
+            aggregators=aggregators,
             feature_names=feature_names,
             feature_registry=feature_registry,
             aggregator_registry=aggregator_registry,
@@ -78,10 +80,12 @@ def materialize(
 
     lazy_parts = [
         to_windowed(
-            lf, cfg,
+            lf,
+            cfg,
             every=spec.every,
             period=spec.period or spec.every,
-            sources=sources, aggregators=aggregators,
+            sources=sources,
+            aggregators=aggregators,
             feature_names=feature_names,
             feature_registry=feature_registry,
             aggregator_registry=aggregator_registry,

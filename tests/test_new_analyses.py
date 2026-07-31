@@ -19,11 +19,11 @@ def _separable_df(n: int = 120) -> pl.DataFrame:
     half = n // 2
     return pl.DataFrame(
         {
-            "f_sep":   list(rng.normal(0, 1, half)) + list(rng.normal(3.0, 1, half)),
-            "f_sep2":  list(rng.normal(0, 1, half)) + list(rng.normal(2.5, 1, half)),
-            "f_weak":  list(rng.normal(0, 1, half)) + list(rng.normal(0.4, 1, half)),
+            "f_sep": list(rng.normal(0, 1, half)) + list(rng.normal(3.0, 1, half)),
+            "f_sep2": list(rng.normal(0, 1, half)) + list(rng.normal(2.5, 1, half)),
+            "f_weak": list(rng.normal(0, 1, half)) + list(rng.normal(0.4, 1, half)),
             "f_noise": list(rng.normal(0, 1, n)),
-            "class":   ["A"] * half + ["B"] * half,
+            "class": ["A"] * half + ["B"] * half,
         }
     )
 
@@ -51,10 +51,20 @@ def test_pairwise_emits_full_battery_and_ci():
     out = PairwiseSeparability(bootstrap_n=100).run(ctx)
     table = out["pairs"][("A", "B")]
     for col in (
-        "mwu_p", "bm_p", "welch_p", "rank_biserial", "cohens_d", "hedges_g",
-        "wasserstein", "js_divergence",
-        "mwu_p_bh_fdr", "ks_p_bh_fdr",
-        "auc_ci_low", "auc_ci_high", "cliffs_ci_low", "cliffs_ci_high",
+        "mwu_p",
+        "bm_p",
+        "welch_p",
+        "rank_biserial",
+        "cohens_d",
+        "hedges_g",
+        "wasserstein",
+        "js_divergence",
+        "mwu_p_bh_fdr",
+        "ks_p_bh_fdr",
+        "auc_ci_low",
+        "auc_ci_high",
+        "cliffs_ci_low",
+        "cliffs_ci_high",
     ):
         assert col in table.columns
     sep_row = table[table["feature"] == "f_sep"].iloc[0]

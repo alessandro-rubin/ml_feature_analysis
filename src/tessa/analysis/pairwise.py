@@ -100,12 +100,8 @@ class PairwiseSeparability:
         mwu_stat, mwu_p = _safe_test(
             lambda x, y: mannwhitneyu(x, y, alternative="two-sided"), va, vb
         )
-        _, bm_p = _safe_test(
-            lambda x, y: brunnermunzel(x, y, alternative="two-sided"), va, vb
-        )
-        welch_t, welch_p = _safe_test(
-            lambda x, y: ttest_ind(x, y, equal_var=False), va, vb
-        )
+        _, bm_p = _safe_test(lambda x, y: brunnermunzel(x, y, alternative="two-sided"), va, vb)
+        welch_t, welch_p = _safe_test(lambda x, y: ttest_ind(x, y, equal_var=False), va, vb)
 
         y_bin = np.concatenate([np.zeros(len(va)), np.ones(len(vb))])
         vals = np.concatenate([va, vb])
@@ -146,24 +142,35 @@ class PairwiseSeparability:
         }
 
         if self.bootstrap_n > 0 and len(va) > 1 and len(vb) > 1:
+
             def _auc_stat(x, y):
                 yb = np.concatenate([np.zeros(len(x)), np.ones(len(y))])
                 return _single_feature_auc(np.concatenate([x, y]), yb)
 
             _, auc_lo, auc_hi = bootstrap_ci(
-                _auc_stat, va, vb,
-                n_resamples=self.bootstrap_n, ci=self.bootstrap_ci, rng=rng,
+                _auc_stat,
+                va,
+                vb,
+                n_resamples=self.bootstrap_n,
+                ci=self.bootstrap_ci,
+                rng=rng,
             )
             _, dl_lo, dl_hi = bootstrap_ci(
-                cliffs_delta, va, vb,
-                n_resamples=self.bootstrap_n, ci=self.bootstrap_ci, rng=rng,
+                cliffs_delta,
+                va,
+                vb,
+                n_resamples=self.bootstrap_n,
+                ci=self.bootstrap_ci,
+                rng=rng,
             )
-            row.update({
-                "auc_ci_low": auc_lo,
-                "auc_ci_high": auc_hi,
-                "cliffs_ci_low": dl_lo,
-                "cliffs_ci_high": dl_hi,
-            })
+            row.update(
+                {
+                    "auc_ci_low": auc_lo,
+                    "auc_ci_high": auc_hi,
+                    "cliffs_ci_low": dl_lo,
+                    "cliffs_ci_high": dl_hi,
+                }
+            )
         return row
 
     def run(self, ctx: AnalysisContext) -> dict[str, Any]:

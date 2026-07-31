@@ -93,17 +93,14 @@ class Run:
             run_analyses([analysis], self.ctx)
         if name not in self.ctx.results:  # skipped (e.g. labels missing)
             raise RuntimeError(
-                f"Analysis {name!r} was skipped — does it need labels the "
-                "context doesn't have?"
+                f"Analysis {name!r} was skipped — does it need labels the context doesn't have?"
             )
         return AnalysisResult.from_raw(name, self.ctx.results[name])
 
     def run_all(self, names: list[str] | None = None, **per_analysis_kwargs) -> dict:
         """Run several analyses (default: every label-compatible one)."""
         names = names or list(_ANALYSES)
-        analyses = [
-            _ANALYSES[n](**per_analysis_kwargs.get(n, {})) for n in names
-        ]
+        analyses = [_ANALYSES[n](**per_analysis_kwargs.get(n, {})) for n in names]
         run_analyses(analyses, self.ctx)
         return {
             n: AnalysisResult.from_raw(n, self.ctx.results[n])
@@ -191,9 +188,7 @@ class Run:
         """
         from tessa.results.figures import figures_for_run
 
-        results = {
-            n: AnalysisResult.from_raw(n, r) for n, r in self.ctx.results.items()
-        }
+        results = {n: AnalysisResult.from_raw(n, r) for n, r in self.ctx.results.items()}
         return figures_for_run(results, max_figures=max_figures)
 
     def summary(self) -> str:
@@ -201,6 +196,5 @@ class Run:
         if not self.ctx.results:
             return "No analyses run yet."
         return "\n\n".join(
-            AnalysisResult.from_raw(n, r).summary()
-            for n, r in self.ctx.results.items()
+            AnalysisResult.from_raw(n, r).summary() for n, r in self.ctx.results.items()
         )

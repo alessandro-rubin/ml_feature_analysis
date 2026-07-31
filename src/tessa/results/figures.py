@@ -39,6 +39,7 @@ _CORAL = "#e07a5f"
 
 # ── small shared helpers ─────────────────────────────────────────────────────
 
+
 def _pdf(frame: Any) -> pd.DataFrame:
     return frame.to_pandas() if isinstance(frame, pl.DataFrame) else frame
 
@@ -107,8 +108,15 @@ def _heatmap(
                 v = matrix[i, j]
                 if not np.isfinite(v):
                     continue
-                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
-                        color="white" if v > mid else "black")
+                ax.text(
+                    j,
+                    i,
+                    f"{v:.2f}",
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    color="white" if v > mid else "black",
+                )
     fig.colorbar(im, ax=ax, label=cbar_label, fraction=0.046, pad=0.04)
     ax.set_title(title)
     fig.tight_layout()
@@ -134,9 +142,11 @@ def _barh_top(
     order = np.argsort(values)[::-1][:top_n][::-1]  # ascending for barh top-down
     fig, ax = plt.subplots(figsize=(7.5, max(2.5, 0.34 * len(order) + 1)))
     ax.barh(
-        np.array(labels)[order], values[order],
+        np.array(labels)[order],
+        values[order],
         color=(colors[order] if colors is not None else color),
-        edgecolor="white", linewidth=0.5,
+        edgecolor="white",
+        linewidth=0.5,
     )
     ax.set_xlabel(xlabel)
     ax.set_title(title)
@@ -145,6 +155,7 @@ def _barh_top(
 
 
 # ── per-analysis builders ────────────────────────────────────────────────────
+
 
 def _b_distributions(res: AnalysisResult) -> list[Figure]:
     if "summary" not in res.frames:
@@ -159,15 +170,22 @@ def _b_distributions(res: AnalysisResult) -> list[Figure]:
         p = pdf["kw_p_bh_fdr"].to_numpy(dtype=float)
         sig = np.where(p < 0.05, _CORAL, "#b8c4d0")
     fig = _barh_top(
-        labels, kw,
+        labels,
+        kw,
         "Class separation per feature — Kruskal–Wallis H",
-        "Kruskal–Wallis statistic", colors=sig,
+        "Kruskal–Wallis statistic",
+        colors=sig,
     )
     if fig is not None and sig is not None:
         fig.axes[0].text(
-            0.98, 0.02, "orange = significant (BH-FDR < 0.05)",
-            transform=fig.axes[0].transAxes, ha="right", va="bottom",
-            fontsize=7, color="#555",
+            0.98,
+            0.02,
+            "orange = significant (BH-FDR < 0.05)",
+            transform=fig.axes[0].transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color="#555",
         )
     return [fig] if fig is not None else []
 
@@ -180,7 +198,8 @@ def _b_importance(res: AnalysisResult) -> list[Figure]:
     if "score_composite" not in pdf.columns:
         return []
     fig = _barh_top(
-        labels, pdf["score_composite"].to_numpy(dtype=float),
+        labels,
+        pdf["score_composite"].to_numpy(dtype=float),
         "Top features by composite importance",
         "Composite importance (rank-blended)",
     )
@@ -197,10 +216,16 @@ def _b_importance_stability(res: AnalysisResult) -> list[Figure]:
         mat = _square_matrix(res.frames["method_agreement"])
         if mat is not None:
             m, labels = mat
-            figs.append(_heatmap(
-                m, labels, "Agreement between importance methods",
-                vmin=-1, vmax=1, cbar_label="Spearman ρ",
-            ))
+            figs.append(
+                _heatmap(
+                    m,
+                    labels,
+                    "Agreement between importance methods",
+                    vmin=-1,
+                    vmax=1,
+                    cbar_label="Spearman ρ",
+                )
+            )
     return figs
 
 
@@ -225,8 +250,13 @@ def _b_separability(res: AnalysisResult) -> list[Figure]:
     )
     ax = fig.axes[0]
     if "chance_level" in s:
-        ax.axvline(float(s["chance_level"]), color="grey", ls=":", lw=1.2,
-                   label=f"chance = {float(s['chance_level']):.2f}")
+        ax.axvline(
+            float(s["chance_level"]),
+            color="grey",
+            ls=":",
+            lw=1.2,
+            label=f"chance = {float(s['chance_level']):.2f}",
+        )
         ax.legend(loc="upper right", fontsize=8)
     verdict = str(s.get("verdict", ""))
     if verdict:
@@ -292,8 +322,9 @@ def _clustering_elbow(res: AnalysisResult) -> list[Figure]:
     best_k = res.scalars.get("best_k")
     if best_k is not None:
         ax.axvline(int(best_k), color="grey", ls=":", lw=1.2)
-        ax.text(int(best_k), max(inertias), f" best k={int(best_k)}",
-                color="grey", fontsize=8, va="top")
+        ax.text(
+            int(best_k), max(inertias), f" best k={int(best_k)}", color="grey", fontsize=8, va="top"
+        )
     ax.set_title("Choosing k — elbow & silhouette")
     fig.tight_layout()
     return [fig]
@@ -370,8 +401,15 @@ def _clustering_embedding(res: AnalysisResult) -> list[Figure]:
             m = vals == c
             label = "noise" if c == -1 else str(c)
             col = "lightgrey" if c == -1 else cmap(i % 10)
-            ax.scatter(coords[m, 0], coords[m, 1], s=14, alpha=0.75,
-                       color=col, label=label, edgecolor="none")
+            ax.scatter(
+                coords[m, 0],
+                coords[m, 1],
+                s=14,
+                alpha=0.75,
+                color=col,
+                label=label,
+                edgecolor="none",
+            )
         ax.set_xlabel("dim 1")
         ax.set_ylabel("dim 2")
         ax.set_title(title)
@@ -425,7 +463,10 @@ def _b_anomaly(res: AnalysisResult) -> list[Figure]:
         fig2 = _barh_top(
             top[id_col].astype(str).to_numpy(),
             top["ensemble"].to_numpy(dtype=float),
-            "Most anomalous rows", "ensemble score", top_n=12, color=_CORAL,
+            "Most anomalous rows",
+            "ensemble score",
+            top_n=12,
+            color=_CORAL,
         )
         if fig2 is not None:
             figs.append(fig2)
@@ -439,10 +480,17 @@ def _b_correlation_structure(res: AnalysisResult) -> list[Figure]:
     if mat is None:
         return []
     m, labels = mat
-    return [_heatmap(
-        m, labels, "Feature correlation structure (|Spearman|)",
-        cmap="magma", vmin=0, vmax=1, cbar_label="|ρ|",
-    )]
+    return [
+        _heatmap(
+            m,
+            labels,
+            "Feature correlation structure (|Spearman|)",
+            cmap="magma",
+            vmin=0,
+            vmax=1,
+            cbar_label="|ρ|",
+        )
+    ]
 
 
 def _b_mi_network(res: AnalysisResult) -> list[Figure]:
@@ -451,17 +499,28 @@ def _b_mi_network(res: AnalysisResult) -> list[Figure]:
         mat = _square_matrix(res.frames["matrix"])
         if mat is not None:
             m, labels = mat
-            figs.append(_heatmap(
-                m, labels, "Mutual-information network",
-                cmap="viridis", vmin=0, cbar_label="MI (bits)",
-            ))
+            figs.append(
+                _heatmap(
+                    m,
+                    labels,
+                    "Mutual-information network",
+                    cmap="viridis",
+                    vmin=0,
+                    cbar_label="MI (bits)",
+                )
+            )
     if "edges" in res.frames:
         e = _pdf(res.frames["edges"])
         if not e.empty and {"feature_a", "feature_b", "mutual_info"} <= set(e.columns):
             lbl = (e["feature_a"].astype(str) + " – " + e["feature_b"].astype(str)).to_numpy()
-            fig = _barh_top(lbl, e["mutual_info"].to_numpy(dtype=float),
-                            "Strongest dependences", "mutual information (bits)",
-                            top_n=12, color=_CORAL)
+            fig = _barh_top(
+                lbl,
+                e["mutual_info"].to_numpy(dtype=float),
+                "Strongest dependences",
+                "mutual information (bits)",
+                top_n=12,
+                color=_CORAL,
+            )
             if fig is not None:
                 figs.append(fig)
     return figs
@@ -476,7 +535,9 @@ def _b_changepoint(res: AnalysisResult) -> list[Figure]:
     fig = _barh_top(
         pdf["channel"].astype(str).to_numpy(),
         pdf["n_changepoints"].to_numpy(dtype=float),
-        "Detected regime changes per channel", "changepoints", top_n=20,
+        "Detected regime changes per channel",
+        "changepoints",
+        top_n=20,
     )
     return [fig] if fig is not None else []
 
@@ -545,9 +606,13 @@ def _b_classifier(res: AnalysisResult) -> list[Figure]:
         if not cl.empty and {"model", "true_class", "pred_class", "count"} <= set(cl.columns):
             order = class_names or sorted(set(cl["true_class"]) | set(cl["pred_class"]))
             for model, g in cl.groupby("model"):
-                piv = (g.pivot_table(index="true_class", columns="pred_class",
-                                     values="count", aggfunc="sum", fill_value=0)
-                       .reindex(index=order, columns=order, fill_value=0))
+                piv = g.pivot_table(
+                    index="true_class",
+                    columns="pred_class",
+                    values="count",
+                    aggfunc="sum",
+                    fill_value=0,
+                ).reindex(index=order, columns=order, fill_value=0)
                 matrices[str(model)] = piv.to_numpy(dtype=float)
                 class_names = order
     # Live path: confusion matrices still attached to the fitted models.
@@ -573,8 +638,15 @@ def _b_classifier(res: AnalysisResult) -> list[Figure]:
         thresh = cm.max() / 2 if cm.size else 0
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
-                ax.text(j, i, int(cm[i, j]), ha="center", va="center", fontsize=8,
-                        color="white" if cm[i, j] > thresh else "black")
+                ax.text(
+                    j,
+                    i,
+                    int(cm[i, j]),
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white" if cm[i, j] > thresh else "black",
+                )
         ax.set_title(model)
     fig.suptitle("Confusion matrices (held-out test split)", fontweight="bold")
     fig.tight_layout()
@@ -585,6 +657,7 @@ def _b_pairwise(res: AnalysisResult) -> list[Figure]:
     pairs = _pairwise_tables(res)
     if not pairs:
         return []
+
     # Highlight the most separable pair (highest top AUC).
     def _top_auc(df: pd.DataFrame) -> float:
         return float(df["auc"].max()) if "auc" in df.columns and len(df) else -np.inf
@@ -648,17 +721,18 @@ _DISPATCH: dict[str, Callable[[AnalysisResult], list[Figure]]] = {
 
 # ── public API ───────────────────────────────────────────────────────────────
 
-def figures_for_result(
-    result: AnalysisResult | Any, *, max_figures: int = 8
-) -> list[TitledFigure]:
+
+def figures_for_result(result: AnalysisResult | Any, *, max_figures: int = 8) -> list[TitledFigure]:
     """Return ``[(title, Figure), ...]`` for one analysis result.
 
     Accepts an :class:`AnalysisResult` or a raw result mapping. Curated
     plots are chosen by analysis name; results without a dedicated builder
     fall back to histograms of their 1-D numeric arrays. Never raises.
     """
-    res = result if isinstance(result, AnalysisResult) else AnalysisResult.from_raw(
-        getattr(result, "name", "result"), result
+    res = (
+        result
+        if isinstance(result, AnalysisResult)
+        else AnalysisResult.from_raw(getattr(result, "name", "result"), result)
     )
     builder = _DISPATCH.get(res.name) or _DISPATCH.get(res.name.split("__", 1)[0])
     figs: list[Figure] = []
@@ -683,10 +757,7 @@ def figures_for_run(
     results: dict[str, AnalysisResult | Any], *, max_figures: int = 8
 ) -> dict[str, list[TitledFigure]]:
     """Map ``{analysis_name: [(title, Figure), ...]}`` for a whole run."""
-    return {
-        name: figures_for_result(res, max_figures=max_figures)
-        for name, res in results.items()
-    }
+    return {name: figures_for_result(res, max_figures=max_figures) for name, res in results.items()}
 
 
 def headline_metrics(results: dict[str, AnalysisResult | Any]) -> list[dict[str, Any]]:
@@ -696,6 +767,7 @@ def headline_metrics(results: dict[str, AnalysisResult | Any]) -> list[dict[str,
     analyses that carry a single headline number (separability verdict,
     CV accuracy, clustering k, Hopkins, …). Safe on partial runs.
     """
+
     def _res(name: str) -> AnalysisResult | None:
         r = results.get(name)
         if r is None:
@@ -707,13 +779,17 @@ def headline_metrics(results: dict[str, AnalysisResult | Any]) -> list[dict[str,
     sep = _res("separability")
     if sep is not None and "summary" in sep.frames:
         s = _pdf(sep.frames["summary"]).iloc[0]
-        out.append({
-            "label": "Separability",
-            "value": str(s.get("verdict", "—")),
-            "help": (f"CV balanced acc {float(s['cv_balanced_accuracy']):.3f} "
-                     f"vs chance {float(s['chance_level']):.2f} "
-                     f"(perm p={float(s['perm_p_value']):.3g})"),
-        })
+        out.append(
+            {
+                "label": "Separability",
+                "value": str(s.get("verdict", "—")),
+                "help": (
+                    f"CV balanced acc {float(s['cv_balanced_accuracy']):.3f} "
+                    f"vs chance {float(s['chance_level']):.2f} "
+                    f"(perm p={float(s['perm_p_value']):.3g})"
+                ),
+            }
+        )
 
     cv = _res("cv_classifier")
     if cv is not None and "summary" in cv.frames:
@@ -721,30 +797,37 @@ def headline_metrics(results: dict[str, AnalysisResult | Any]) -> list[dict[str,
         labels, sm = _resolve_labels(sm, ("index",))
         if "mean" in sm.columns and "accuracy" in labels:
             i = list(labels).index("accuracy")
-            out.append({
-                "label": "CV accuracy",
-                "value": f"{float(sm['mean'].iloc[i]):.3f}",
-                "help": f"mean over {len(_pdf(cv.frames['per_fold']))} folds"
-                        if "per_fold" in cv.frames else "cross-validated",
-            })
+            out.append(
+                {
+                    "label": "CV accuracy",
+                    "value": f"{float(sm['mean'].iloc[i]):.3f}",
+                    "help": f"mean over {len(_pdf(cv.frames['per_fold']))} folds"
+                    if "per_fold" in cv.frames
+                    else "cross-validated",
+                }
+            )
 
     clu = _res("clustering")
     if clu is not None and clu.scalars.get("best_k") is not None:
-        out.append({
-            "label": "Best k",
-            "value": str(int(clu.scalars["best_k"])),
-            "help": "KMeans elbow/silhouette winner",
-        })
+        out.append(
+            {
+                "label": "Best k",
+                "value": str(int(clu.scalars["best_k"])),
+                "help": "KMeans elbow/silhouette winner",
+            }
+        )
 
     cval = _res("cluster_validation")
     if cval is not None and "summary" in cval.frames:
         s = _pdf(cval.frames["summary"]).iloc[0]
         if np.isfinite(float(s.get("hopkins", np.nan))):
-            out.append({
-                "label": "Hopkins",
-                "value": f"{float(s['hopkins']):.2f}",
-                "help": "cluster tendency (>0.6 clusterable, ~0.5 none)",
-            })
+            out.append(
+                {
+                    "label": "Hopkins",
+                    "value": f"{float(s['hopkins']):.2f}",
+                    "help": "cluster tendency (>0.6 clusterable, ~0.5 none)",
+                }
+            )
 
     return out
 

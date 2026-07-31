@@ -43,9 +43,7 @@ from sklearn.preprocessing import StandardScaler
 from tessa.analysis.base import AnalysisContext, CVPlan, make_cv, prepare_xy, seeded
 
 
-def _cv_balanced_accuracy(
-    model: Any, X: np.ndarray, y: np.ndarray, plan: CVPlan
-) -> float:
+def _cv_balanced_accuracy(model: Any, X: np.ndarray, y: np.ndarray, plan: CVPlan) -> float:
     """Mean balanced accuracy over ``plan``'s folds, refitting each time."""
     scores = []
     for tr, te in plan.split(X, y):
@@ -76,9 +74,7 @@ class SeparabilityTest:
     group_by_asset: bool = True
     permute_within_assets: bool = False
     rf_params: dict = field(
-        default_factory=lambda: dict(
-            n_estimators=200, max_depth=None, n_jobs=-1, random_state=None
-        )
+        default_factory=lambda: dict(n_estimators=200, max_depth=None, n_jobs=-1, random_state=None)
     )
 
     def run(self, ctx: AnalysisContext) -> dict[str, Any]:
@@ -97,8 +93,7 @@ class SeparabilityTest:
         perm_groups = plan.groups if self.permute_within_assets else None
         if perm_groups is not None:
             informative = sum(
-                len(np.unique(y[perm_groups == g])) > 1
-                for g in np.unique(perm_groups)
+                len(np.unique(y[perm_groups == g])) > 1 for g in np.unique(perm_groups)
             )
             if informative < 2:
                 warnings.warn(
@@ -114,18 +109,14 @@ class SeparabilityTest:
         rng = np.random.RandomState(ctx.cfg.random_state)
         perm_scores = np.asarray(
             Parallel(n_jobs=-1)(
-                delayed(_cv_balanced_accuracy)(
-                    model, X, _shuffle(y, perm_groups, rng), plan
-                )
+                delayed(_cv_balanced_accuracy)(model, X, _shuffle(y, perm_groups, rng), plan)
                 for _ in range(self.n_permutations)
             ),
             dtype=float,
         )
         # sklearn's convention: the observed score counts as one draw, so the
         # p-value can never be exactly 0.
-        p_value = float(
-            (np.sum(perm_scores >= observed) + 1.0) / (self.n_permutations + 1)
-        )
+        p_value = float((np.sum(perm_scores >= observed) + 1.0) / (self.n_permutations + 1))
 
         Z = StandardScaler().fit_transform(X)
         sil = (
@@ -135,23 +126,23 @@ class SeparabilityTest:
         )
 
         chance = 1.0 / n_classes  # balanced accuracy of uninformed guessing
-        verdict = (
-            "separable" if p_value <= 0.05 and observed > chance else "not separable"
+        verdict = "separable" if p_value <= 0.05 and observed > chance else "not separable"
+        summary = pd.DataFrame(
+            [
+                {
+                    "cv_balanced_accuracy": float(observed),
+                    "chance_level": chance,
+                    "perm_p_value": float(p_value),
+                    "n_permutations": self.n_permutations,
+                    "n_splits": n_splits,
+                    "silhouette_labels": sil,
+                    "verdict": verdict,
+                    "cv_scheme": plan.scheme,
+                    "n_assets": plan.n_groups,
+                    "permutation_null": ("within_asset" if perm_groups is not None else "global"),
+                }
+            ]
         )
-        summary = pd.DataFrame([{
-            "cv_balanced_accuracy": float(observed),
-            "chance_level": chance,
-            "perm_p_value": float(p_value),
-            "n_permutations": self.n_permutations,
-            "n_splits": n_splits,
-            "silhouette_labels": sil,
-            "verdict": verdict,
-            "cv_scheme": plan.scheme,
-            "n_assets": plan.n_groups,
-            "permutation_null": (
-                "within_asset" if perm_groups is not None else "global"
-            ),
-        }])
 
         return {
             "summary": summary,

@@ -82,9 +82,7 @@ class ClusterAnalysis:
         ).fit_predict(X)
 
         if HDBSCAN is not None:
-            labels["HDBSCAN"] = HDBSCAN(
-                min_cluster_size=self.hdbscan_min_samples
-            ).fit_predict(X)
+            labels["HDBSCAN"] = HDBSCAN(min_cluster_size=self.hdbscan_min_samples).fit_predict(X)
         return labels
 
     def _reduce(self, X: np.ndarray, random_state: int) -> dict:
@@ -104,18 +102,20 @@ class ClusterAnalysis:
             if m.sum() < 2 or len(set(lab[m])) < 2:
                 continue
             h, c, v = homogeneity_completeness_v_measure(y[m], lab[m])
-            rows.append({
-                "Algorithm": name,
-                "Clusters": len(set(lab) - {-1}),
-                "Noise pts": int((lab == -1).sum()),
-                "Silhouette": silhouette_score(X[m], lab[m]),
-                "Davies-Bouldin": davies_bouldin_score(X[m], lab[m]),
-                "ARI": adjusted_rand_score(y[m], lab[m]),
-                "NMI": normalized_mutual_info_score(y[m], lab[m]),
-                "Homogeneity": h,
-                "Completeness": c,
-                "V-measure": v,
-            })
+            rows.append(
+                {
+                    "Algorithm": name,
+                    "Clusters": len(set(lab) - {-1}),
+                    "Noise pts": int((lab == -1).sum()),
+                    "Silhouette": silhouette_score(X[m], lab[m]),
+                    "Davies-Bouldin": davies_bouldin_score(X[m], lab[m]),
+                    "ARI": adjusted_rand_score(y[m], lab[m]),
+                    "NMI": normalized_mutual_info_score(y[m], lab[m]),
+                    "Homogeneity": h,
+                    "Completeness": c,
+                    "V-measure": v,
+                }
+            )
         return pd.DataFrame(rows).set_index("Algorithm") if rows else pd.DataFrame()
 
     def _embedding_frame(
@@ -132,9 +132,7 @@ class ClusterAnalysis:
         true_cls = np.asarray(class_names)[y]
         blocks = []
         for name, coords in reductions.items():
-            block = pd.DataFrame(
-                {"reduction": name, "dim1": coords[:, 0], "dim2": coords[:, 1]}
-            )
+            block = pd.DataFrame({"reduction": name, "dim1": coords[:, 0], "dim2": coords[:, 1]})
             for algo, lab in all_labels.items():
                 block[f"cluster::{algo}"] = lab
             block["true_class"] = true_cls
@@ -166,7 +164,5 @@ class ClusterAnalysis:
             "y_true": y,
             # serializable flattening of reductions+labels (dicts the store
             # drops) so the dashboard can plot scatter / heatmap from disk.
-            "embedding": self._embedding_frame(
-                reductions, all_labels, y, prep.class_names
-            ),
+            "embedding": self._embedding_frame(reductions, all_labels, y, prep.class_names),
         }

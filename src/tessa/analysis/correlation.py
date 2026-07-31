@@ -47,13 +47,18 @@ class CorrelationStructure:
         np.fill_diagonal(dist, 0.0)
         condensed = squareform(dist, checks=False)
         link = linkage(condensed, method="average")
-        cluster_ids = fcluster(link, t=1.0 - self.cluster_threshold,
-                               criterion="distance")
+        cluster_ids = fcluster(link, t=1.0 - self.cluster_threshold, criterion="distance")
 
-        clusters = pd.DataFrame({
-            "feature": prep.feature_cols,
-            "cluster": cluster_ids,
-        }).sort_values(["cluster", "feature"]).reset_index(drop=True)
+        clusters = (
+            pd.DataFrame(
+                {
+                    "feature": prep.feature_cols,
+                    "cluster": cluster_ids,
+                }
+            )
+            .sort_values(["cluster", "feature"])
+            .reset_index(drop=True)
+        )
         keep = clusters.groupby("cluster")["feature"].first()
         clusters["suggested_keep"] = clusters["feature"].isin(set(keep))
 
@@ -61,11 +66,17 @@ class CorrelationStructure:
         rho = vals[iu]
         dup_mask = rho >= self.duplicate_threshold
         feat = np.asarray(prep.feature_cols)
-        duplicates = pd.DataFrame({
-            "feature_a": feat[iu[0][dup_mask]],
-            "feature_b": feat[iu[1][dup_mask]],
-            "abs_spearman": rho[dup_mask],
-        }).sort_values("abs_spearman", ascending=False).reset_index(drop=True)
+        duplicates = (
+            pd.DataFrame(
+                {
+                    "feature_a": feat[iu[0][dup_mask]],
+                    "feature_b": feat[iu[1][dup_mask]],
+                    "abs_spearman": rho[dup_mask],
+                }
+            )
+            .sort_values("abs_spearman", ascending=False)
+            .reset_index(drop=True)
+        )
 
         return {
             "correlation": corr,

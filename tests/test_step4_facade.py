@@ -31,11 +31,13 @@ def fake_data(tmp_path: Path) -> Config:
         t0 = datetime(2024, 1, 1)
         n = 24 * 31
         ts = pl.datetime_range(t0, t0 + timedelta(hours=n - 1), "1h", eager=True)
-        pl.DataFrame({
-            cfg.timestamp_col: ts,
-            "x": list(range(n)),
-            "y": [i * 0.5 for i in range(n)],
-        }).write_parquet(folder / f"{asset}_20240101_20240131.parquet")
+        pl.DataFrame(
+            {
+                cfg.timestamp_col: ts,
+                "x": list(range(n)),
+                "y": [i * 0.5 for i in range(n)],
+            }
+        ).write_parquet(folder / f"{asset}_20240101_20240131.parquet")
     return cfg
 
 
@@ -48,6 +50,7 @@ def _registries():
 
 
 # ── Dataset facade ──────────────────────────────────────────────────────────
+
 
 def test_dataset_assets_and_channels(fake_data: Config):
     ds = Dataset(fake_data)
@@ -65,31 +68,40 @@ def test_dataset_lazy_slice(fake_data: Config):
 
 def test_dataset_events(fake_data: Config):
     ds = Dataset(fake_data)
-    labels = pl.DataFrame({
-        "asset_id": ["A1", "A2"],
-        "start": [datetime(2024, 1, 5), datetime(2024, 1, 8)],
-        "end": [datetime(2024, 1, 7), datetime(2024, 1, 10)],
-        "class": ["TP", "FP"],
-    })
+    labels = pl.DataFrame(
+        {
+            "asset_id": ["A1", "A2"],
+            "start": [datetime(2024, 1, 5), datetime(2024, 1, 8)],
+            "end": [datetime(2024, 1, 7), datetime(2024, 1, 10)],
+            "class": ["TP", "FP"],
+        }
+    )
     events = ds.events(labels)
     assert len(events) == 2
 
 
 # ── WindowSpec + materialize ────────────────────────────────────────────────
 
+
 def test_materialize_event_spec(fake_data: Config):
     ds = Dataset(fake_data)
-    labels = pl.DataFrame({
-        "asset_id": ["A1", "A2"],
-        "start": [datetime(2024, 1, 5), datetime(2024, 1, 8)],
-        "end": [datetime(2024, 1, 7), datetime(2024, 1, 10)],
-        "class": ["TP", "FP"],
-    })
+    labels = pl.DataFrame(
+        {
+            "asset_id": ["A1", "A2"],
+            "start": [datetime(2024, 1, 5), datetime(2024, 1, 8)],
+            "end": [datetime(2024, 1, 7), datetime(2024, 1, 10)],
+            "class": ["TP", "FP"],
+        }
+    )
     fr, ar = _registries()
     table = materialize(
-        ds.events(labels), WindowSpec.event(), fake_data,
-        aggregators=["mean", "max"], feature_names=[],
-        feature_registry=fr, aggregator_registry=ar,
+        ds.events(labels),
+        WindowSpec.event(),
+        fake_data,
+        aggregators=["mean", "max"],
+        feature_names=[],
+        feature_registry=fr,
+        aggregator_registry=ar,
     )
     assert table.height == 2
     assert "x__mean" in table.columns and "class" in table.columns
@@ -97,17 +109,24 @@ def test_materialize_event_spec(fake_data: Config):
 
 def test_materialize_tumbling_spec(fake_data: Config):
     ds = Dataset(fake_data)
-    labels = pl.DataFrame({
-        "asset_id": ["A1"],
-        "start": [datetime(2024, 1, 5, 0)],
-        "end": [datetime(2024, 1, 5, 23)],
-        "class": ["TP"],
-    })
+    labels = pl.DataFrame(
+        {
+            "asset_id": ["A1"],
+            "start": [datetime(2024, 1, 5, 0)],
+            "end": [datetime(2024, 1, 5, 23)],
+            "class": ["TP"],
+        }
+    )
     fr, ar = _registries()
     table = materialize(
-        ds.events(labels), WindowSpec.tumbling("6h"), fake_data,
-        sources=["x"], aggregators=["mean"], feature_names=[],
-        feature_registry=fr, aggregator_registry=ar,
+        ds.events(labels),
+        WindowSpec.tumbling("6h"),
+        fake_data,
+        sources=["x"],
+        aggregators=["mean"],
+        feature_names=[],
+        feature_registry=fr,
+        aggregator_registry=ar,
     )
     assert table.height == 4  # 24h / 6h
     assert "x__mean" in table.columns
@@ -119,6 +138,7 @@ def test_windowspec_requires_every():
 
 
 # ── AnalysisResult ──────────────────────────────────────────────────────────
+
 
 def test_from_raw_buckets():
     import pandas as pd
@@ -141,31 +161,32 @@ def test_from_raw_buckets():
 
 # ── Run + ResultStore round trip ────────────────────────────────────────────
 
+
 def _labeled_table(n_per_class: int = 40, seed: int = 0) -> pl.DataFrame:
     rng = np.random.default_rng(seed)
     rows = []
     for cls, shift in (("healthy", 0.0), ("fault", 3.0)):
         for i in range(n_per_class):
-            rows.append({
-                "event_id": f"{cls}_{i}",
-                "class": cls,
-                "f_a": float(rng.normal(shift, 1.0)),
-                "f_b": float(rng.normal(0, 1.0)),
-            })
+            rows.append(
+                {
+                    "event_id": f"{cls}_{i}",
+                    "class": cls,
+                    "f_a": float(rng.normal(shift, 1.0)),
+                    "f_b": float(rng.normal(0, 1.0)),
+                }
+            )
     return pl.DataFrame(rows)
 
 
 def test_run_facade_and_store_roundtrip(tmp_path: Path):
     run = Run(_labeled_table(), target_col="class", cfg=Config(random_state=7))
 
-    imp = run.importance(permutation_repeats=2,
-                         rf_params={"n_estimators": 20, "n_jobs": 1})
+    imp = run.importance(permutation_repeats=2, rf_params={"n_estimators": 20, "n_jobs": 1})
     assert "table" in imp.frames
     # cached: second call without kwargs returns the same underlying result
     assert run.importance().frames["table"] is imp.frames["table"]
 
-    sep = run.separability(n_permutations=30,
-                           rf_params={"n_estimators": 30, "n_jobs": 1})
+    sep = run.separability(n_permutations=30, rf_params={"n_estimators": 30, "n_jobs": 1})
     assert sep.frames["summary"]["verdict"][0] == "separable"
 
     ano = run.anomaly(iforest_params={"n_estimators": 30, "n_jobs": 1})

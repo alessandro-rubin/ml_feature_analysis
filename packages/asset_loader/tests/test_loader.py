@@ -35,9 +35,7 @@ def fake_data(tmp_path: Path) -> LoaderConfig:
         )
         df.write_parquet(folder / f"sensor_{s}_{e}.parquet")
 
-    ts = pl.datetime_range(
-        datetime(2024, 1, 1), datetime(2024, 2, 28, 22), "2h", eager=True
-    )
+    ts = pl.datetime_range(datetime(2024, 1, 1), datetime(2024, 2, 28, 22), "2h", eager=True)
     df = pl.DataFrame({cfg.timestamp_col: ts, "z": [float(i) for i in range(len(ts))]})
     df.write_parquet(folder / "flow_rate_240101_240228.parquet")
     return cfg
@@ -49,9 +47,7 @@ def test_discover_files_overlap(fake_data: LoaderConfig):
 
 
 def test_discover_sources_grouping(fake_data: LoaderConfig):
-    groups = discover_sources(
-        "A1", datetime(2024, 1, 15), datetime(2024, 2, 5), fake_data
-    )
+    groups = discover_sources("A1", datetime(2024, 1, 15), datetime(2024, 2, 5), fake_data)
     assert set(groups) == {"sensor", "flow_rate"}
     assert len(groups["sensor"]) == 2
     assert len(groups["flow_rate"]) == 1
@@ -97,9 +93,7 @@ def test_load_event_spans_time_chunks(fake_data: LoaderConfig):
 
 
 def test_load_event_column_subset_prunes_sources(fake_data: LoaderConfig):
-    lf = load_event(
-        "A1", datetime(2024, 1, 10), datetime(2024, 1, 12), fake_data, columns=["x"]
-    )
+    lf = load_event("A1", datetime(2024, 1, 10), datetime(2024, 1, 12), fake_data, columns=["x"])
     df = lf.collect()
     assert set(df.columns) == {"timestamp", "x"}
     # flow_rate source skipped entirely -> pure hourly grid, no extra rows
@@ -131,9 +125,7 @@ def test_load_event_missing_column(fake_data: LoaderConfig):
 
 def test_load_event_duplicate_column_across_sources(fake_data: LoaderConfig):
     folder = fake_data.asset_dir("A1")
-    ts = pl.datetime_range(
-        datetime(2024, 1, 1), datetime(2024, 1, 31), "1d", eager=True
-    )
+    ts = pl.datetime_range(datetime(2024, 1, 1), datetime(2024, 1, 31), "1d", eager=True)
     pl.DataFrame({fake_data.timestamp_col: ts, "x": [0.0] * len(ts)}).write_parquet(
         folder / "dup_240101_240131.parquet"
     )

@@ -56,9 +56,7 @@ class AnalysisResult:
                 scalars[key] = list(val)
             else:
                 objects[key] = val
-        return cls(
-            name=name, frames=frames, arrays=arrays, scalars=scalars, objects=objects
-        )
+        return cls(name=name, frames=frames, arrays=arrays, scalars=scalars, objects=objects)
 
     def summary(self, max_rows: int = 10) -> str:
         """Human-readable digest: scalars + the head of each frame."""
@@ -71,8 +69,7 @@ class AnalysisResult:
             lines.append(pdf.head(max_rows).to_string())
         if self.arrays:
             lines.append(
-                "\narrays: "
-                + ", ".join(f"{k}{list(v.shape)}" for k, v in self.arrays.items())
+                "\narrays: " + ", ".join(f"{k}{list(v.shape)}" for k, v in self.arrays.items())
             )
         if self.objects:
             lines.append("objects (not serialized): " + ", ".join(self.objects))

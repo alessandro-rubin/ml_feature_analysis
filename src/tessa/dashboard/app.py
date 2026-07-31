@@ -22,8 +22,7 @@ try:
     import streamlit as st
 except ImportError as err:  # pragma: no cover
     raise SystemExit(
-        "streamlit is required for the dashboard: "
-        "pip install 'ml-analysis[dashboard]'"
+        "streamlit is required for the dashboard: pip install 'ml-analysis[dashboard]'"
     ) from err
 
 from tessa.results import ResultStore
@@ -43,8 +42,7 @@ def main() -> None:  # pragma: no cover — manual/UI entry point
 
     root = st.sidebar.text_input("Results root", _cli_root())
     if not Path(root).exists():
-        st.info(f"No results directory at `{root}` yet. Save a run first: "
-                "`Run(...).save(path)`.")
+        st.info(f"No results directory at `{root}` yet. Save a run first: `Run(...).save(path)`.")
         return
     store = ResultStore(root)
     runs = store.runs()

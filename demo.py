@@ -73,8 +73,8 @@ from tessa.io.stat_plots import (
 DATA_ROOT = Path("demo_data")
 OUTPUT_DIR = Path("demo_outputs")
 RANDOM_SEED = 42
-N_EVENTS_PER_CLASS = 20   # events per (class, asset) combination
-EVENT_LEN_HOURS = 6       # samples per event at 1-sample/min → 360 rows
+N_EVENTS_PER_CLASS = 20  # events per (class, asset) combination
+EVENT_LEN_HOURS = 6  # samples per event at 1-sample/min → 360 rows
 
 cfg = Config(
     data_root=DATA_ROOT,
@@ -84,6 +84,7 @@ cfg = Config(
 
 
 # ── 1. Synthetic data generation ──────────────────────────────────────────────
+
 
 def _signal(rng: np.random.Generator, n: int, cls: str) -> dict[str, np.ndarray]:
     """Return synthetic signal columns.  TP/FP show a burst; TN/FN are quiet."""
@@ -153,6 +154,7 @@ def generate_synthetic_data(
 
 # ── 2. Feature registration ───────────────────────────────────────────────────
 
+
 def register_features() -> None:
     for signal in ("temperature", "vibration", "pressure"):
         make_rolling_mean(signal, window=10)
@@ -162,6 +164,7 @@ def register_features() -> None:
 
 
 # ── 3. Pretty-print helpers ───────────────────────────────────────────────────
+
 
 def _hr(title: str) -> None:
     width = 70
@@ -173,28 +176,30 @@ def _hr(title: str) -> None:
 def print_importance(result: dict) -> None:
     _hr("Feature Importance")
     tbl = result["table"]
-    print(tbl[["rank", "rf_mdi", "perm_mean", "anova_f", "mutual_info", "score_composite"]]
-          .head(10)
-          .to_string())
+    print(
+        tbl[["rank", "rf_mdi", "perm_mean", "anova_f", "mutual_info", "score_composite"]]
+        .head(10)
+        .to_string()
+    )
 
 
 def print_classifier(result: dict) -> None:
     _hr("Classifier Evaluation")
     for name, r in result["models"].items():
         print(f"\n  {name}  — accuracy {r['accuracy']:.3f}")
-        print(textwrap.indent(
-            str(r["confusion_matrix"]), "    "
-        ))
+        print(textwrap.indent(str(r["confusion_matrix"]), "    "))
 
 
 def print_pairwise(result: dict) -> None:
     _hr("Pairwise Separability  (top-3 features per pair)")
     for (a, b), df in result["pairs"].items():
         print(f"\n  {a} vs {b}")
-        print(textwrap.indent(
-            df[["feature", "auc", "cliffs_delta", "ks_p"]].head(3).to_string(index=False),
-            "    ",
-        ))
+        print(
+            textwrap.indent(
+                df[["feature", "auc", "cliffs_delta", "ks_p"]].head(3).to_string(index=False),
+                "    ",
+            )
+        )
 
 
 def print_distributions(result: dict) -> None:
@@ -220,8 +225,13 @@ def print_pairwise_extended(result: dict) -> None:
     key = _find_pair(pairs, "FP", "TP")
     df = pairs[key]
     cols = [
-        "feature", "auc", "cliffs_delta", "cohens_d",
-        "wasserstein", "mwu_p_bh_fdr", "ks_p_bh_fdr",
+        "feature",
+        "auc",
+        "cliffs_delta",
+        "cohens_d",
+        "wasserstein",
+        "mwu_p_bh_fdr",
+        "ks_p_bh_fdr",
     ]
     cols = [c for c in cols if c in df.columns]
     print(f"  pair = {key[0]} vs {key[1]}")
@@ -231,10 +241,23 @@ def print_pairwise_extended(result: dict) -> None:
 def print_cv(result: dict) -> None:
     _hr(f"Cross-validated classifier  (k={len(result['per_fold'])} folds)")
     summary = result["summary"]
-    rows = [r for r in (
-        "accuracy", "balanced_accuracy", "f1_macro", "mcc", "cohen_kappa",
-        "log_loss", "roc_auc", "roc_auc_ovr", "pr_auc", "brier", "ece",
-    ) if r in summary.index]
+    rows = [
+        r
+        for r in (
+            "accuracy",
+            "balanced_accuracy",
+            "f1_macro",
+            "mcc",
+            "cohen_kappa",
+            "log_loss",
+            "roc_auc",
+            "roc_auc_ovr",
+            "pr_auc",
+            "brier",
+            "ece",
+        )
+        if r in summary.index
+    ]
     print(summary.loc[rows][["mean", "std", "min", "max"]].round(3).to_string())
 
 
@@ -255,13 +278,19 @@ def print_importance_stability(result: dict) -> None:
 def print_cluster_validation(result: dict) -> None:
     _hr("Cluster validation  (Hopkins, ARI / V-measure permutation)")
     s = result["summary"].iloc[0]
-    print(f"  Hopkins statistic       : {s['hopkins']:.3f}   "
-          "(>0.6 = clusterable, ~0.5 = no structure)")
+    print(
+        f"  Hopkins statistic       : {s['hopkins']:.3f}   "
+        "(>0.6 = clusterable, ~0.5 = no structure)"
+    )
     print(f"  Calinski-Harabasz       : {s['calinski_harabasz']:.2f}")
-    print(f"  ARI vs class labels     : {s['ari']:+.3f}   "
-          f"(perm p = {s['ari_perm_p']:.4g}, n={int(s['n_permutations'])})")
-    print(f"  V-measure vs class lbls : {s['v_measure']:+.3f}   "
-          f"(perm p = {s['v_measure_perm_p']:.4g})")
+    print(
+        f"  ARI vs class labels     : {s['ari']:+.3f}   "
+        f"(perm p = {s['ari_perm_p']:.4g}, n={int(s['n_permutations'])})"
+    )
+    print(
+        f"  V-measure vs class lbls : {s['v_measure']:+.3f}   "
+        f"(perm p = {s['v_measure_perm_p']:.4g})"
+    )
 
 
 def print_clustering(result: dict) -> None:
@@ -283,6 +312,7 @@ def print_stratified(result: dict) -> None:
 
 
 # ── 4. Summary figure ─────────────────────────────────────────────────────────
+
 
 def save_summary_figure(
     importance_result: dict,
@@ -410,6 +440,7 @@ def save_permutation_null_figure(
 
     # Re-encode the true labels exactly the way prepare_xy did (filtered + encoded).
     from tessa.analysis.base import prepare_xy
+
     prep = prepare_xy(ctx)
     y = prep.y
     mask = np.asarray(labels) != -1
@@ -423,9 +454,12 @@ def save_permutation_null_figure(
         nulls[i] = adjusted_rand_score(perm, lab_kept)
 
     from tessa.io.stat_plots import permutation_null_plot
+
     fig = permutation_null_plot(
-        nulls, observed=float(summary["ari"]),
-        p_value=float(summary["ari_perm_p"]), statistic_name="ARI",
+        nulls,
+        observed=float(summary["ari"]),
+        p_value=float(summary["ari_perm_p"]),
+        statistic_name="ARI",
     )
     p = output_dir / "demo_permutation_null_ari.png"
     fig.savefig(p, dpi=120, bbox_inches="tight")
@@ -444,6 +478,7 @@ def save_calibration_figure(
     if proba is None or proba.shape[1] != 2:
         return None
     from tessa.analysis.base import prepare_xy
+
     prep = prepare_xy(ctx)
     fig = calibration_plot(prep.y, proba[:, 1], n_bins=10)
     p = output_dir / "demo_calibration.png"
@@ -454,6 +489,7 @@ def save_calibration_figure(
 
 
 # ── 4b. New-capabilities tour (v0.1: unsupervised / semi-supervised / report) ──
+
 
 def run_new_capabilities(
     period: pl.DataFrame,
@@ -484,21 +520,23 @@ def run_new_capabilities(
         period.select("event_id", "class").to_pandas(), on="event_id"
     )
     print("  mean ensemble score by true class (bursty TP/FP should rank high):")
-    print(textwrap.indent(
-        scores.groupby("class")["ensemble"].mean().round(3).to_string(), "    "
-    ))
+    print(textwrap.indent(scores.groupby("class")["ensemble"].mean().round(3).to_string(), "    "))
     top5 = scores.nlargest(5, "ensemble")
     contributors = ano.objects["top_contributors"]
     print("\n  top-5 anomalous events and their #1 contributing feature:")
     for idx, row in top5.iterrows():
         feat, z = contributors[idx][0]
-        print(f"    {row['event_id']:38s} class={row['class']:3s} "
-              f"score={row['ensemble']:.3f}  ← {feat} (z={z:+.1f})")
+        print(
+            f"    {row['event_id']:38s} class={row['class']:3s} "
+            f"score={row['ensemble']:.3f}  ← {feat} (z={z:+.1f})"
+        )
 
     _hr("Correlation structure  (redundant channels)")
     corr = run.correlation_structure()
-    print(f"  {corr.scalars['n_features']} features → "
-          f"{corr.scalars['n_clusters']} correlation clusters")
+    print(
+        f"  {corr.scalars['n_features']} features → "
+        f"{corr.scalars['n_clusters']} correlation clusters"
+    )
     dups = corr.frames["duplicates"]
     if len(dups):
         print("  strongest near-duplicates:")
@@ -506,8 +544,7 @@ def run_new_capabilities(
 
     _hr("Mutual-information network  (nonlinear dependences, exploratory)")
     mi = run.mi_network(max_features=15)
-    print(textwrap.indent(mi.frames["edges"].head(5).round(3).to_string(index=False),
-                          "    "))
+    print(textwrap.indent(mi.frames["edges"].head(5).round(3).to_string(index=False), "    "))
 
     _hr("Label spreading  (15% of labels kept, rest recovered)")
     keep = rng.random(period.height) < 0.15
@@ -520,16 +557,18 @@ def run_new_capabilities(
     truth = period["class"].to_numpy()
     acc = float((pred == truth).mean())
     print(f"  labeled rows used : {ls.scalars['n_labeled']} / {period.height}")
-    print(f"  recovery accuracy : {acc:.1%} on all rows  "
-          "(chance = 25%; TN vs FN are identical by construction, so the "
-          "practical ceiling is ~75%)")
+    print(
+        f"  recovery accuracy : {acc:.1%} on all rows  "
+        "(chance = 25%; TN vs FN are identical by construction, so the "
+        "practical ceiling is ~75%)"
+    )
 
     _hr("PU learning  (only TP labeled positive; who else looks like one?)")
     pu_labels = pl.when(pl.col("class") == "TP").then(pl.lit("TP")).otherwise(None)
-    pu_run = Run(period.with_columns(pu_labels.alias("class")),
-                 target_col="class", cfg=cfg)
+    pu_run = Run(period.with_columns(pu_labels.alias("class")), target_col="class", cfg=cfg)
     pu = pu_run.pu_learning(
-        positive_label="TP", n_iterations=20,
+        positive_label="TP",
+        n_iterations=20,
         rf_params={"n_estimators": 60, "n_jobs": -1},
     )
     ranked = pu.frames["ranked_unlabeled"].merge(
@@ -537,14 +576,16 @@ def run_new_capabilities(
         on="event_id",
     )
     print("  top-5 unlabeled events by PU score (FP bursts should surface):")
-    print(textwrap.indent(
-        ranked[["event_id", "true_class", "pu_score"]].head(5)
-        .round(3).to_string(index=False), "    "))
+    print(
+        textwrap.indent(
+            ranked[["event_id", "true_class", "pu_score"]].head(5).round(3).to_string(index=False),
+            "    ",
+        )
+    )
 
     # Raw-signal analyses need a time-indexed series: take one bursty event.
     tp_lf = next(
-        lf for lf in events.values()
-        if lf.select(pl.col("class").first()).collect().item() == "TP"
+        lf for lf in events.values() if lf.select(pl.col("class").first()).collect().item() == "TP"
     )
     event_df = tp_lf.collect()
 
@@ -552,15 +593,22 @@ def run_new_capabilities(
     cp = Run(event_df, cfg=cfg).changepoint(channels=["temperature", "vibration"])
     tbl = cp.frames["table"]
     if len(tbl):
-        print(textwrap.indent(
-            tbl[["channel", "position", "direction", "statistic"]]
-            .head(5).round(2).to_string(index=False), "    "))
+        print(
+            textwrap.indent(
+                tbl[["channel", "position", "direction", "statistic"]]
+                .head(5)
+                .round(2)
+                .to_string(index=False),
+                "    ",
+            )
+        )
     else:
         print("  no regime change detected")
 
     _hr("Lagged relations  (reference = temperature, exploratory)")
     lr = Run(event_df, cfg=cfg).lagged_relations(
-        reference="temperature", max_lag=15,
+        reference="temperature",
+        max_lag=15,
         channels=["temperature", "vibration", "pressure"],
     )
     print(textwrap.indent(lr.frames["table"].round(3).to_string(index=False), "    "))
@@ -568,15 +616,16 @@ def run_new_capabilities(
 
     _hr("Persistence  (ResultStore run + self-contained HTML report)")
     run_dir = run.save(OUTPUT_DIR / "runs", name="demo_run")
-    report = run.report(OUTPUT_DIR / "demo_report.html",
-                        title="tessa demo report")
+    report = run.report(OUTPUT_DIR / "demo_report.html", title="tessa demo report")
     print(f"  Run saved   → {run_dir}  (manifest + parquet, dashboard-ready)")
     print(f"  Report      → {report}")
-    print("  Dashboard   → streamlit run src/tessa/dashboard/app.py "
-          f"-- --root {OUTPUT_DIR / 'runs'}")
+    print(
+        f"  Dashboard   → streamlit run src/tessa/dashboard/app.py -- --root {OUTPUT_DIR / 'runs'}"
+    )
 
 
 # ── 5. Main ───────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     print("tessa demo — end-to-end pipeline")
@@ -590,8 +639,10 @@ def main() -> None:
     classes = ["TP", "FP", "TN", "FN"]
     replacement_types = ["bearing", "seal"]
 
-    print(f"\n[1/6] Generating synthetic data  ({len(assets)} assets × {len(classes)} classes"
-          f" × {N_EVENTS_PER_CLASS} events each) ...")
+    print(
+        f"\n[1/6] Generating synthetic data  ({len(assets)} assets × {len(classes)} classes"
+        f" × {N_EVENTS_PER_CLASS} events each) ..."
+    )
     labels = generate_synthetic_data(
         assets=assets,
         classes=classes,
@@ -632,7 +683,8 @@ def main() -> None:
             permutation_repeats=5,
         ),
         ImportanceStability(
-            n_bootstrap=80, top_k=10,
+            n_bootstrap=80,
+            top_k=10,
             rf_params={"n_estimators": 80, "n_jobs": -1, "random_state": RANDOM_SEED},
         ),
         ClusterAnalysis(),
@@ -680,7 +732,9 @@ def main() -> None:
     )
     # Calibration only makes sense for binary — re-run a binary CV on TP vs FP.
     binary_ctx = AnalysisContext(
-        df=period, cfg=cfg, target_col="class",
+        df=period,
+        cfg=cfg,
+        target_col="class",
         label_filter={"class": ["TP", "FP"]},
         output_dir=str(OUTPUT_DIR),
     )
@@ -690,7 +744,10 @@ def main() -> None:
     ).run(binary_ctx)
     save_calibration_figure(binary_ctx, binary_cv, OUTPUT_DIR)
     save_permutation_null_figure(
-        ctx, results["cluster_validation"], OUTPUT_DIR, n_perm=400,
+        ctx,
+        results["cluster_validation"],
+        OUTPUT_DIR,
+        n_perm=400,
     )
 
     print("\n[6/6] New capabilities: unsupervised / semi-supervised / persistence")
