@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "asset_loader"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lazy multi-source parquet loading of per-asset time-series."
 requires-python = ">=3.11"
 readme = "README.md"

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+- **`asset_loader` 0.2.0 — merge strategies, duplicate columns, provenance.**
+  `load_event` / `load_asset` gained three options, all defaulting to the
+  previous behaviour:
+  - `merge=` chooses how sources covering the same period are combined —
+    `"outer"` (the old hard-coded full outer join), `"left"` and `"inner"`
+    joins, `"vertical"` row stacking, or `"asof"` (with `asof_strategy` /
+    `asof_tolerance`) to carry a slow source onto a fast source's grid.
+    `source_order=` sets the anchor of a `left`/`asof` merge, the priority
+    used for duplicates, and the output column order.
+  - `on_duplicate=` handles a column name shared by several sources
+    instead of always raising: `"rename"` suffixes each copy with its
+    source, `"coalesce"` folds them into one column by priority, and
+    `"first"` / `"last"` keep a single source's copy. `"error"` remains
+    the default.
+  - `with_metadata=True` returns a `LoadResult` (a `(frame, metadata)`
+    NamedTuple) whose dict records the files read per source, their
+    periods and columns, the merge and duplicate resolution applied, the
+    resulting schema, and an ordered `operations` log of every step.
+
 ### Fixed
 - **Asset leakage in cross-validation.** `cv_classifier` and `separability`
   used `StratifiedKFold(shuffle=True)` with no grouping, so events of the
