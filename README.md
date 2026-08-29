@@ -38,7 +38,8 @@ pip install -e .[dev]
 
 Optional extras: `boosting` (lightgbm, xgboost), `clustering` (hdbscan,
 umap-learn), `dashboard` (streamlit), `jupyter`, `dev` (pytest, ruff),
-`all`.
+`ai` (OpenAI-compatible agent drivers + MCP server), `ai-anthropic`
+(Claude driver), `all`.
 
 ## Package layout
 
@@ -66,6 +67,8 @@ src/tessa/
   results/           # AnalysisResult, ResultStore, UI-independent figures,
                      # static HTML report
   dashboard/         # streamlit run browser over a ResultStore
+  ai/                # optional: LLM agent that can invent features
+                     # (tools, expression sandbox, MCP server, CLI)
 ```
 
 One-line data access without the pipeline:
@@ -165,6 +168,41 @@ streamlit run src/tessa/dashboard/app.py -- outputs/runs
 `demo.py` runs the whole pipeline end-to-end on synthetic data; see
 `tests/` for runnable examples of each analysis.
 
+## AI agent (optional)
+
+The pipeline can be driven by a language model that decides what to measure and
+— the point of the layer — **writes new features** when the stock aggregates
+cannot see what distinguishes the classes. Feature expressions are ordinary
+Polars, supplied as strings and checked against an AST allowlist before they run:
+
+```python
+create_feature("vibration__jerk", 'pl.col("vibration").diff().abs()',
+               rationale="the classes differ in ordering, not in level")
+```
+
+Three ways to drive it, two of which need no Anthropic key:
+
+```bash
+uv run tessa-agent --data-root ./demo_data --make-demo --offline   # no model at all
+uv run tessa-agent --data-root data --labels labels.xlsx \
+  --goal "What separates TP from FP?" --provider groq             # Groq/OpenRouter/OpenAI/local
+uv run tessa-mcp                                                   # any MCP client
+```
+
+`tessa-mcp` exposes the same tools over the Model Context Protocol, so Claude
+Desktop, Claude Code, Cline or Zed can drive them using their own model — no API
+key of yours involved. The tool functions are plain Python and import no SDK, so
+they are equally usable directly from a notebook.
+
+Every invented feature is recorded with its expression, rationale and measured
+contribution, and the ledger is written into the run manifest so a saved run
+explains its own columns. Because features are selected by measuring them on the
+same data, `holdout_assets` + `confirm_on_holdout` reserve assets that the
+exploration never sees.
+
+See [AI_INTEGRATION.md](AI_INTEGRATION.md) for the tool reference, the expression
+language, and the sandbox's threat model.
+
 ## Statistical tests and corroboration
 
 The analyses ship with a layered statistical-testing toolkit: multiple-
@@ -214,5 +252,7 @@ pytest            # run test suite
 ruff check .      # lint
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs `uv sync`, `ruff check`,
-and `pytest` on every push.
+GitHub Actions (`.github/workflows/ci.yml`) runs `uv sync --all-extras`,
+`ruff check`, `ruff format --check`, and `pytest` on every push. Tests marked
+`live` call a real model API and are deselected by default, so CI never spends
+money; run them with `pytest -m live`.

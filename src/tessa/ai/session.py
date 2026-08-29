@@ -138,7 +138,11 @@ class AgentSession:
         col = self.cfg.asset_col
         if col not in self.labels.columns:
             return None
-        keep = [a for a in self.labels[col].unique().to_list() if a not in self.holdout_assets]
+        # Sorted: `unique()` does not guarantee an order, and an unstable
+        # label_filter would make runs non-reproducible.
+        keep = sorted(
+            a for a in self.labels[col].unique().to_list() if a not in self.holdout_assets
+        )
         return {col: keep}
 
 
