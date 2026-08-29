@@ -659,7 +659,7 @@ def materialize(
     kind: str = "event",
     sources: list[str] | None = None,
     aggregators: list[str] | None = None,
-    feature_names: list[str] | None = None,
+    feature_names: list[str] | str | None = None,
     every: str | None = None,
     period: str | None = None,
     table_name: str = "baseline",
