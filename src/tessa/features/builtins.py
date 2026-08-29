@@ -9,7 +9,7 @@ from __future__ import annotations
 import polars as pl
 
 from tessa.features.aggregates import aggregate
-from tessa.features.registry import feature
+from tessa.features.registry import FeatureRegistry, feature
 
 
 # ── Per-sample feature factories ─────────────────────────────────────────────
@@ -17,7 +17,7 @@ from tessa.features.registry import feature
 # registration time. Users typically call `make_*` to register one per signal.
 
 
-def make_rolling_mean(source: str, window: int) -> None:
+def make_rolling_mean(source: str, window: int, registry: FeatureRegistry | None = None) -> None:
     """Register a rolling-mean feature for ``source``.
 
     Parameters
@@ -26,20 +26,22 @@ def make_rolling_mean(source: str, window: int) -> None:
         Name of the input column.
     window : int
         Rolling-window size in samples.
+    registry : FeatureRegistry, optional
+        Target registry. Defaults to the process-wide default registry.
 
     Notes
     -----
     The new feature is registered as ``"<source>__roll_mean_<window>"`` in
-    the default feature registry.
+    the target registry.
     """
     name = f"{source}__roll_mean_{window}"
 
-    @feature(name, deps=(source,))
+    @feature(name, deps=(source,), registry=registry)
     def _():
         return pl.col(source).rolling_mean(window)
 
 
-def make_rolling_std(source: str, window: int) -> None:
+def make_rolling_std(source: str, window: int, registry: FeatureRegistry | None = None) -> None:
     """Register a rolling-std feature for ``source``.
 
     Parameters
@@ -48,41 +50,45 @@ def make_rolling_std(source: str, window: int) -> None:
         Name of the input column.
     window : int
         Rolling-window size in samples.
+    registry : FeatureRegistry, optional
+        Target registry. Defaults to the process-wide default registry.
 
     Notes
     -----
     The new feature is registered as ``"<source>__roll_std_<window>"`` in
-    the default feature registry.
+    the target registry.
     """
     name = f"{source}__roll_std_{window}"
 
-    @feature(name, deps=(source,))
+    @feature(name, deps=(source,), registry=registry)
     def _():
         return pl.col(source).rolling_std(window)
 
 
-def make_first_difference(source: str) -> None:
+def make_first_difference(source: str, registry: FeatureRegistry | None = None) -> None:
     """Register a first-difference feature for ``source``.
 
     Parameters
     ----------
     source : str
         Name of the input column.
+    registry : FeatureRegistry, optional
+        Target registry. Defaults to the process-wide default registry.
 
     Notes
     -----
-    The new feature is registered as ``"<source>__diff1"`` in the default
-    feature registry. The first sample of each event is null because there
+    The new feature is registered as ``"<source>__diff1"`` in the target
+    registry. The first sample of each event is null because there
     is no prior value to subtract.
     """
     name = f"{source}__diff1"
 
-    @feature(name, deps=(source,))
+    @feature(name, deps=(source,), registry=registry)
     def _():
         return pl.col(source).diff()
 
 
-def make_zscore(source: str, window: int) -> None:
+def make_zscore(source: str, window: int, registry: FeatureRegistry | None = None) -> None:
     """Register a rolling z-score feature for ``source``.
 
     The z-score is computed as ``(x - rolling_mean) / rolling_std``, both
@@ -94,22 +100,24 @@ def make_zscore(source: str, window: int) -> None:
         Name of the input column.
     window : int
         Rolling-window size in samples used for both mean and std.
+    registry : FeatureRegistry, optional
+        Target registry. Defaults to the process-wide default registry.
 
     Notes
     -----
     The new feature is registered as ``"<source>__zscore_<window>"`` in the
-    default feature registry.
+    target registry.
     """
     name = f"{source}__zscore_{window}"
 
-    @feature(name, deps=(source,))
+    @feature(name, deps=(source,), registry=registry)
     def _():
         m = pl.col(source).rolling_mean(window)
         s = pl.col(source).rolling_std(window)
         return (pl.col(source) - m) / s
 
 
-def make_constant_counter(source: str) -> None:
+def make_constant_counter(source: str, registry: FeatureRegistry | None = None) -> None:
     """Register a constant-sample counter for ``source``.
 
     The counter starts at 0 and increases by one for each sample whose value
@@ -123,17 +131,19 @@ def make_constant_counter(source: str) -> None:
     ----------
     source : str
         Name of the input column.
+    registry : FeatureRegistry, optional
+        Target registry. Defaults to the process-wide default registry.
 
     Notes
     -----
     The new feature is registered as ``"<source>__const_count"`` in the
-    default feature registry. Because features are materialised one event at
+    target registry. Because features are materialised one event at
     a time, the counter never carries a run across event boundaries; the first
     sample of each event is always 0.
     """
     name = f"{source}__const_count"
 
-    @feature(name, deps=(source,))
+    @feature(name, deps=(source,), registry=registry)
     def _():
         # A new run starts wherever the value differs from the prior sample;
         # the first sample (null shift) also begins a run. Numbering rows
