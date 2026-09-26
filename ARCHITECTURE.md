@@ -53,6 +53,8 @@ Hard constraints derived from the audit:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
+│  agent      LLM tool surface · expression sandbox · MCP      │
+├─────────────────────────────────────────────────────────────┤
 │  consume    notebook API · static HTML report · dashboard   │
 ├─────────────────────────────────────────────────────────────┤
 │  results    typed Result objects · ResultStore · run        │
@@ -374,6 +376,57 @@ not `.plot()` (use `run.figures()`), and the anomaly baseline parameter is
 self-contained HTML — shareable without the dashboard running.
 
 ---
+
+## 6b. Agent layer (`ai/`) — *added after v0.2*
+
+Sits above everything and is depended on by nothing, so the core library stays
+usable — and testable — with none of it installed.
+
+```
+tools.py ── plain functions, no SDK ──┬── mcp_server.py   (any MCP client)
+                                      └── schemas.py ──┬── backend_openai.py
+                                                       └── backend_anthropic.py
+                                                            └── loop.py
+```
+
+Three design decisions worth recording:
+
+**The tool surface is one implementation.** `tools.py` imports no model SDK, so
+the same functions back the MCP server, both agent drivers, and direct calls from
+a notebook. Schemas are *derived* from signatures and docstrings
+(`schemas.py`) and adapted per provider, rather than hand-written per provider —
+the previous incarnation of this layer hand-wrote Anthropic schemas, mechanically
+re-serialized them for the Groq path, duplicated the loop, and the copies drifted.
+
+**Analyses are reached generically.** `Run.run(name, **kwargs)` is already a
+name-dispatcher over `_ANALYSES`, so one `run_analysis` tool covers all sixteen
+analyses; the parameter catalogue comes from `dataclasses.fields`, so it cannot
+fall behind the code. Adding an analysis exposes it to the agent for free.
+
+**The agent can author features, not just select them.** This is the reason the
+layer exists, and it needed no change to the feature layer: `create_feature`
+compiles a model-supplied Polars expression through an AST allowlist
+(`expressions.py`) into an ordinary `FeatureSpec`, registers it in a
+*session-scoped* registry cloned from the process-wide one, and passes that
+registry through the `feature_registry=` parameter every materializer already
+accepted (§4). An invented feature therefore flows through per-sample
+materialization, aggregation and every analysis unchanged, while never being
+able to leak into the global registry or another session.
+
+Consequences that had to be handled rather than designed around:
+
+- `to_period` yields `(sources + features) x aggregators` columns, so features
+  the agent invents multiply. `materialize` defaults to *no* derived features
+  (`"__all__"` is the explicit opt-in) and refuses tables past a column budget.
+- Selecting features by measuring them on the same data is optimistic. Grouped
+  folds and permutation p-values reduce it; only `holdout_assets` +
+  `confirm_on_holdout` resolve it.
+- An AI-authored column is unexplainable once the process exits, so the feature
+  ledger — expression, rationale, measured contribution — is persisted into the
+  `ResultStore` manifest.
+
+The sandbox's threat model, the tool reference and the expression language are
+documented in [AI_INTEGRATION.md](AI_INTEGRATION.md).
 
 ## 7. Configuration & reproducibility
 

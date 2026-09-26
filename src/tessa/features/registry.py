@@ -98,6 +98,55 @@ class FeatureRegistry:
         """Return the names of all registered features in insertion order."""
         return list(self._specs)
 
+    def specs(self) -> dict[str, FeatureSpec]:
+        """Return a shallow copy of the name -> spec mapping."""
+        return dict(self._specs)
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._specs
+
+    def unregister(self, name: str) -> None:
+        """Remove a feature from the registry.
+
+        :meth:`register` deliberately refuses to overwrite, so revising a
+        feature means dropping it first.
+
+        Raises
+        ------
+        KeyError
+            If no feature with that name is registered.
+        """
+        del self._specs[name]
+
+    def copy(self) -> "FeatureRegistry":
+        """Return an independent registry holding the same specs.
+
+        :class:`FeatureSpec` is frozen and its factory is a pure closure, so
+        the specs are safe to share: registering or unregistering in the copy
+        cannot affect the original.
+        """
+        clone = FeatureRegistry()
+        clone._specs = dict(self._specs)
+        return clone
+
+    def merge(self, other: "FeatureRegistry", *, overwrite: bool = False) -> None:
+        """Copy every spec from ``other`` into this registry.
+
+        Parameters
+        ----------
+        other : FeatureRegistry
+            Source registry.
+        overwrite : bool, optional
+            If ``False`` (default), a name present in both raises
+            ``ValueError``. If ``True``, ``other`` wins.
+        """
+        for name, spec in other.specs().items():
+            if name in self._specs:
+                if not overwrite:
+                    raise ValueError(f"Feature already registered: {name}")
+                del self._specs[name]
+            self._specs[name] = spec
+
     def resolve(self, names: list[str] | None = None) -> list[FeatureSpec]:
         """Topologically sort the requested specs.
 
@@ -105,10 +154,10 @@ class FeatureRegistry:
         ----------
         names : list of str, optional
             Subset of features to resolve. If ``None``, resolves every
-            registered feature. Names that are not registered are treated
-            as raw input columns and silently skipped — this lets features
-            declare ``deps=("temperature",)`` without having to register
-            the raw columns themselves.
+            registered feature; an empty list resolves none. Names that are
+            not registered are treated as raw input columns and silently
+            skipped — this lets features declare ``deps=("temperature",)``
+            without having to register the raw columns themselves.
 
         Returns
         -------
@@ -121,7 +170,7 @@ class FeatureRegistry:
         ValueError
             If a cycle is detected in the dependency graph.
         """
-        wanted = set(names) if names else set(self._specs)
+        wanted = set(self._specs) if names is None else set(names)
         ordered: list[FeatureSpec] = []
         seen: set[str] = set()
         in_progress: set[str] = set()
