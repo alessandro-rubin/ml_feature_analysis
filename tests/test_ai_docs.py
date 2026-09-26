@@ -13,7 +13,7 @@ from gen_ai_docs import DOC, render, render_allowlist, render_tool_table  # noqa
 
 def test_generated_sections_are_up_to_date():
     """Run `uv run python scripts/gen_ai_docs.py` if this fails."""
-    current = DOC.read_text()
+    current = DOC.read_text(encoding="utf-8")
     assert render(current) == current, (
         "AI_INTEGRATION.md is stale; regenerate with `uv run python scripts/gen_ai_docs.py`"
     )
@@ -37,7 +37,7 @@ def test_allowlist_documents_what_the_compiler_accepts():
 
 def test_doc_states_the_threat_model_and_selection_bias():
     """Two things this doc must not quietly omit."""
-    text = DOC.read_text()
+    text = DOC.read_text(encoding="utf-8")
     assert "AST allowlist is the security boundary" in text
     assert "defence in depth only" in text
     assert "Selection bias" in text

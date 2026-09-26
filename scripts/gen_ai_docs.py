@@ -93,10 +93,10 @@ def render(doc: str) -> str:
 
 
 def main() -> int:
-    current = DOC.read_text()
+    current = DOC.read_text(encoding="utf-8")
     updated = render(current)
     if updated != current:
-        DOC.write_text(updated)
+        DOC.write_text(updated, encoding="utf-8")
         print(f"Updated {DOC.name}")
     else:
         print(f"{DOC.name} already up to date")
