@@ -21,8 +21,61 @@
     NamedTuple) whose dict records the files read per source, their
     periods and columns, the merge and duplicate resolution applied, the
     resulting schema, and an ordered `operations` log of every step.
+- **AI layer restored and rebuilt** (`src/tessa/ai/`, `[ai]` / `[ai-anthropic]`
+  extras, `tessa-agent` and `tessa-mcp` entry points). The layer stripped in
+  0.2.0 (see its *Removed* section) is back, rewritten against the current
+  architecture rather than reverted: it targets `tessa` rather than
+  `ml_analysis`, reaches all 16 registered analyses through `Run.run`'s generic
+  dispatcher instead of the 4 the old tools exposed, and drives the `Run` /
+  `AnalysisResult` / `ResultStore` layer that did not exist before.
+- **The AI can author its own features.** `create_feature` / `create_aggregator`
+  accept a Polars expression as a string, validated by an AST allowlist and
+  compiled into an ordinary `FeatureSpec`. Registration targets a session-scoped
+  registry cloned from the process-wide one, injected through the
+  `feature_registry=` parameter the materializers already accepted — so an
+  invented feature flows through the whole pipeline, and can never leak into the
+  global registry or another session.
+- `preview_feature` compiles and tries an expression on one event without
+  registering it, so a broken expression never enters the registry.
+- A **feature ledger** records every invented feature with its expression,
+  rationale, preview statistics and measured contribution, and `save_run` writes
+  it into the run manifest — a saved run explains its own columns.
+- `holdout_assets` / `confirm_on_holdout` reserve assets that the exploration
+  never sees, the only real answer to selecting features on the data you then
+  measure on.
+- A **column budget** on `materialize`, because derived features multiply by
+  aggregators; and `feature_names` now defaults to *none* rather than *all*, with
+  `"__all__"` as the explicit opt-in.
+- `tessa-agent --offline` drives the whole tool surface with no model and no
+  credential — the fastest way to verify an install.
+- `tessa.ai.demo_data.generate` builds a synthetic dataset whose two classes
+  share every marginal statistic by construction, so period aggregates provably
+  cannot separate them and a derived feature can.
+
+### Changed
+- The `[ai]` extra now means the OpenAI-compatible drivers (Groq, OpenRouter,
+  OpenAI, local) plus the MCP server — the paths needing no Anthropic key —
+  while `[ai-anthropic]` adds the Claude driver. In 0.2.0 the removed `[ai]`
+  extra meant the Anthropic path; the names now split along credential lines.
+- Tool schemas are derived once from each function's signature and docstring and
+  adapted per provider, and one provider-neutral loop serves both backends. The
+  previous layer hand-wrote Anthropic schemas, re-serialized them for the Groq
+  path, and duplicated the loop.
 
 ### Fixed
+- **`FeatureRegistry.resolve([])` returned every registered feature instead of
+  none.** The guard read `set(names) if names else set(self._specs)`, and `[]` is
+  falsy. Every materializer docstring documents the opposite ("``[]`` skips
+  them"), so there was no way to request no features at all — which also made
+  the derived-feature explosion unavoidable. `None` now means all, `[]` means
+  none.
+- `FeatureRegistry` and `AggregatorRegistry` gained `copy`/`unregister`/
+  `__contains__`/`specs` (and `merge` on the former). `register` deliberately
+  refuses to overwrite, so revising a feature needs an explicit unregister, and
+  a private registry previously meant reaching into `_specs`.
+- The five `make_*` builtins hardcoded the process-wide registry, so they could
+  not populate a private one and raised on a second call for the same
+  `(source, window)`. They now accept an optional `registry=`.
 - **Asset leakage in cross-validation.** `cv_classifier` and `separability`
   used `StratifiedKFold(shuffle=True)` with no grouping, so events of the
   same asset landed in both train and test folds. With several events per

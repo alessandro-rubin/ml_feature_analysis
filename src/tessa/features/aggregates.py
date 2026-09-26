@@ -82,6 +82,33 @@ class AggregatorRegistry:
         """Return the names of all registered aggregators in insertion order."""
         return list(self._specs)
 
+    def specs(self) -> dict[str, AggSpec]:
+        """Return a shallow copy of the name -> spec mapping."""
+        return dict(self._specs)
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._specs
+
+    def unregister(self, name: str) -> None:
+        """Remove an aggregator from the registry.
+
+        Raises
+        ------
+        KeyError
+            If no aggregator with that name is registered.
+        """
+        del self._specs[name]
+
+    def copy(self) -> "AggregatorRegistry":
+        """Return an independent registry holding the same specs.
+
+        :class:`AggSpec` is frozen, so sharing specs between registries is
+        safe: mutating the copy cannot affect the original.
+        """
+        clone = AggregatorRegistry()
+        clone._specs = dict(self._specs)
+        return clone
+
 
 _default_registry = AggregatorRegistry()
 
