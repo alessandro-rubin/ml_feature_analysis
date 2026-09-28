@@ -85,13 +85,16 @@ def hopkins_statistic(
 
 def _ari_perm_test(
     y_true: np.ndarray, labels: np.ndarray, n_perm: int, rng: np.random.Generator
-) -> tuple[float, float]:
-    """Permutation p-value for ARI between class labels and cluster IDs."""
+) -> tuple[float, float, np.ndarray]:
+    """Permutation test for ARI between class labels and cluster IDs.
+
+    Returns ``(observed, p_value, null_distribution)``.
+    """
     mask = labels != -1
     y_true = y_true[mask]
     labels = labels[mask]
     if len(y_true) < 2 or len(np.unique(labels)) < 2:
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), np.empty(0)
     observed = adjusted_rand_score(y_true, labels)
     null = np.empty(n_perm, dtype=float)
     perm = y_true.copy()
@@ -100,17 +103,18 @@ def _ari_perm_test(
         null[i] = adjusted_rand_score(perm, labels)
     # two-sided p: fraction of null at least as extreme as observed
     p = float((np.abs(null) >= abs(observed)).sum() + 1) / (n_perm + 1)
-    return float(observed), p
+    return float(observed), p, null
 
 
 def _vmeasure_perm_test(
     y_true: np.ndarray, labels: np.ndarray, n_perm: int, rng: np.random.Generator
-) -> tuple[float, float]:
+) -> tuple[float, float, np.ndarray]:
+    """Permutation test for V-measure; returns ``(observed, p_value, null_distribution)``."""
     mask = labels != -1
     y_true = y_true[mask]
     labels = labels[mask]
     if len(y_true) < 2 or len(np.unique(labels)) < 2:
-        return float("nan"), float("nan")
+        return float("nan"), float("nan"), np.empty(0)
     observed = homogeneity_completeness_v_measure(y_true, labels)[2]
     null = np.empty(n_perm, dtype=float)
     perm = y_true.copy()
@@ -118,7 +122,7 @@ def _vmeasure_perm_test(
         rng.shuffle(perm)
         null[i] = homogeneity_completeness_v_measure(perm, labels)[2]
     p = float((null >= observed).sum() + 1) / (n_perm + 1)
-    return float(observed), p
+    return float(observed), p, null
 
 
 @dataclass
@@ -154,8 +158,8 @@ class ClusterValidation:
             else float("nan")
         )
 
-        ari_obs, ari_p = _ari_perm_test(y, labels, self.n_permutations, rng)
-        v_obs, v_p = _vmeasure_perm_test(y, labels, self.n_permutations, rng)
+        ari_obs, ari_p, ari_null = _ari_perm_test(y, labels, self.n_permutations, rng)
+        v_obs, v_p, v_null = _vmeasure_perm_test(y, labels, self.n_permutations, rng)
 
         summary = pd.DataFrame(
             [
@@ -171,4 +175,11 @@ class ClusterValidation:
             ]
         )
 
-        return {"summary": summary, "labels_used": labels}
+        # The nulls let a plot show *how far* the observed value sits from
+        # chance, not just its p-value; they survive the result store.
+        return {
+            "summary": summary,
+            "labels_used": labels,
+            "ari_null": ari_null,
+            "v_measure_null": v_null,
+        }

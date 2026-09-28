@@ -83,7 +83,7 @@ _RESULT_KEYS: dict[str, list[str]] = {
     "distributions": ["summary", "per_feature_class"],
     # `pairs` is keyed by class tuples, so AnalysisResult files it under
     # `objects` and ResultStore drops it. `pairs_long` is the usable frame.
-    "pairwise": ["pairs_long"],
+    "pairwise": ["pair_summary", "pairs_long"],
     "clustering": ["embedding", "k_values", "metrics"],
     "cluster_validation": ["summary"],
     "importance_stability": ["bootstrap_table", "method_agreement"],

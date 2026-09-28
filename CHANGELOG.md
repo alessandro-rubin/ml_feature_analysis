@@ -3,6 +3,39 @@
 ## Unreleased
 
 ### Added
+- **Figures that lead with the finding.** Each analysis's plots now open with
+  the answer it exists to give, and titles state that answer when the numbers
+  support one ("5 of 6 class pairs separable; not FN–TN", "96% of errors are
+  FN ↔ TN"):
+  - `pairwise`: a class-pair separability matrix. Each cell is the best
+    single-feature AUC among features surviving BH-FDR, with the count of such
+    features; a pair where none survives sits at chance, because the best raw
+    AUC over many noise features is inflated by selection. It is backed by a new
+    `pair_summary` frame (`analysis.pairwise.summarize_pairs`), computed before
+    any `top_n` cut. The volcano / AUC-CI drill-down now shows the hardest pair
+    that still separates.
+  - `distributions`: small multiples of the top features' per-class quantiles
+    (median, IQR, 5–95%), with each source signal's best feature included,
+    drawn from `per_feature_class`.
+  - `classifier` / `cv_classifier`: confusion matrices as row percentages,
+    titled with the accuracy and the class pair holding most errors.
+    `cv_classifier` adds a pooled out-of-fold confusion matrix and, for binary
+    targets, a calibration curve; it now returns `y_true`, row-aligned with
+    `oof_pred` / `oof_proba`.
+  - `cluster_validation`: the ARI permutation null. The analysis now returns
+    `ari_null` / `v_measure_null`.
+  - `headline_metrics`: a "Separable pairs" KPI.
+- **One visual system for every plot** (`io/stat_plots.py`): `theme()`, a
+  colour-blind-safe categorical order, `class_colors` (a class keeps its colour
+  in every figure of a run), `signal_colors`, a single-hue `SEQUENTIAL` ramp and
+  a red↔blue `DIVERGING` ramp. New plots `pair_separability_matrix`,
+  `confusion_matrix_plot`, `class_quantile_panel` and `embedding_scatter`, and
+  helpers `pair_separability_headline`, `dominant_confusion`,
+  `confusion_headline` and `metric_chance_level`.
+- `demo.py` writes `demo_outputs/overview.png`, the demo's conclusion on one
+  page (raw events per class, the pair matrix, the out-of-fold confusion
+  matrix), plus every curated figure under `demo_outputs/figures/`, from the
+  same factory as the report and dashboard.
 - **`asset_loader` 0.2.0 — merge strategies, duplicate columns, provenance.**
   `load_event` / `load_asset` gained three options, all defaulting to the
   previous behaviour:
@@ -61,8 +94,33 @@
   adapted per provider, and one provider-neutral loop serves both backends. The
   previous layer hand-wrote Anthropic schemas, re-serialized them for the Groq
   path, and duplicated the loop.
+- `cv_metric_boxplot` draws each fold as a dot below 8 folds, and marks each
+  metric's own chance level (pass `n_classes`) instead of one line at 0.5, which
+  was wrong for multi-class accuracy and for MCC / Cohen's kappa.
+- `calibration_plot` defaults to equal-count bins, about one per 20 predictions
+  (3 to 10), and reports the ECE in its title.
+- `volcano_plot` greys out features below the thresholds and labels the top 3
+  in a column with leader lines instead of 6 overlapping labels. A p-value that
+  underflowed to 0 is pinned to the smallest observed one instead of dropped.
+- The clustering elbow plot uses two stacked panels instead of two y-scales on
+  one axis.
+- `cluster_class_heatmap_panel` names algorithms that found fewer than two
+  clusters in its title instead of drawing empty panels.
+- `demo.py` and `demo_notebook.ipynb` use the library plots instead of
+  hand-rolled ones: the ARI null is read from `ClusterValidation` instead of
+  recomputed, and the demo's `PairwiseSeparability` no longer cuts to
+  `top_n=15`, which had left the volcano plot without its non-significant cloud.
 
 ### Fixed
+- **`permutation_null_plot` drew the null invisibly** when the observed value
+  sat far from it: 40 narrow bars with white edges washed out to nothing, so
+  the plot showed only the observed line. Bins now span the null alone, drawn as
+  one filled shape.
+- **Bar charts indexed by feature were labelled 0, 1, 2, … under pandas 3**,
+  whose string index dtype is `str`, not `object`. This hit the importance and
+  Kruskal–Wallis charts in the HTML report and the dashboard.
+- `figures_for_result` left open the figures a failing builder had created
+  before raising, and those beyond `max_figures`.
 - **`FeatureRegistry.resolve([])` returned every registered feature instead of
   none.** The guard read `set(names) if names else set(self._specs)`, and `[]` is
   falsy. Every materializer docstring documents the opposite ("``[]`` skips

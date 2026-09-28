@@ -124,6 +124,61 @@ def test_pairwise_volcano_from_stored_pairs_long(tmp_path, computed_run: Run):
             plt.close(fig)
 
 
+def _titles(titled) -> str:
+    return " | ".join(t for t, _ in titled).lower()
+
+
+@pytest.mark.parametrize("stored", [False, True], ids=["live", "stored"])
+def test_finding_first_figures(tmp_path, computed_run: Run, stored: bool):
+    if stored:
+        computed_run.save(tmp_path / "runs", name="r3")
+        results = ResultStore(tmp_path / "runs").load_run("r3")
+    else:
+        results = {n: AnalysisResult.from_raw(n, r) for n, r in computed_run.ctx.results.items()}
+    figs = figures_for_run(results)
+    try:
+        assert _titles(figs["pairwise"]).startswith("all 3 class pairs separable")
+        assert "by class" in _titles(figs["distributions"])
+        assert "out-of-fold confusion" in _titles(figs["cv_classifier"])
+        assert "permutation null" in _titles(figs["cluster_validation"])
+    finally:
+        _close_all(figs)
+
+
+def test_importance_bars_are_labelled_with_feature_names(computed_run: Run):
+    raw = computed_run.ctx.results["importance"]
+    titled = figures_for_result(AnalysisResult.from_raw("importance", raw))
+    try:
+        ticks = {t.get_text() for t in titled[0][1].axes[0].get_yticklabels()}
+        assert "f_sep" in ticks
+    finally:
+        for _, fig in titled:
+            plt.close(fig)
+
+
+def test_elbow_uses_two_panels_not_two_y_scales(computed_run: Run):
+    figs = computed_run.figures()
+    try:
+        fig = next(f for t, f in figs["clustering"] if t.lower().startswith("choosing k"))
+        top, bottom = fig.axes
+        assert top.get_shared_x_axes().joined(top, bottom)
+    finally:
+        _close_all(figs)
+
+
+def test_failing_builder_does_not_leak_figures(monkeypatch):
+    from tessa.results import figures as figures_module
+
+    def broken(res):
+        plt.figure()
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(figures_module._DISPATCH, "broken", broken)
+    before = len(plt.get_fignums())
+    assert figures_for_result(AnalysisResult(name="broken")) == []
+    assert len(plt.get_fignums()) == before
+
+
 def test_unknown_result_falls_back_to_array_histograms():
     res = AnalysisResult(
         name="mystery", arrays={"scores": np.random.default_rng(0).normal(size=200)}
@@ -141,6 +196,7 @@ def test_headline_metrics_extracted(computed_run: Run):
     metrics = headline_metrics(results)
     labels = {m["label"] for m in metrics}
     assert "Separability" in labels
+    assert "Separable pairs" in labels
     assert "Best k" in labels
     assert all(isinstance(m["value"], str) for m in metrics)
 

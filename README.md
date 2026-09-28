@@ -165,8 +165,10 @@ Browse a saved run with the dashboard:
 streamlit run src/tessa/dashboard/app.py -- outputs/runs
 ```
 
-`demo.py` runs the whole pipeline end-to-end on synthetic data; see
-`tests/` for runnable examples of each analysis.
+`demo.py` runs the whole pipeline end-to-end on synthetic data and writes
+`demo_outputs/overview.png`, its conclusion on one page, plus every curated
+figure under `demo_outputs/figures/`; see `tests/` for runnable examples of
+each analysis.
 
 ## AI agent (optional)
 
