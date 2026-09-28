@@ -1,9 +1,9 @@
 """
 End-to-end demo for tessa.
 
-Generates synthetic ~1 Hz time-series data for three assets, builds a label
-table with four event classes (TP / FP / TN / FN) and two replacement-type
-strata, then runs the full pipeline:
+Generates synthetic 1-sample/min time-series data for three assets, builds a
+label table with four event classes (TP / FP / TN / FN) and two
+replacement-type strata, then runs the full pipeline:
 
   data on disk  ->  dataset.build  ->  feature materialisation
                ->  period aggregate  ->  analysis suite
@@ -14,6 +14,8 @@ Run:
     python demo.py
 
 No external files required — everything is synthesised in demo_data/.
+demo_notebook.ipynb imports this module and reuses `prepare_data` and
+`analysis_suite`, so the script and the notebook run the same pipeline.
 """
 
 from __future__ import annotations
@@ -25,17 +27,10 @@ import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Ensure box-drawing / Unicode output works on legacy console codepages (e.g. cp1252).
-for _stream in (sys.stdout, sys.stderr):
-    if isinstance(_stream, io.TextIOWrapper):
-        _stream.reconfigure(encoding="utf-8")
-
 import matplotlib
-
-matplotlib.use("Agg")  # headless
-
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import polars as pl
 
 from tessa import Config, Run
@@ -61,6 +56,7 @@ from tessa.features.builtins import (
     make_zscore,
 )
 from tessa.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
+from tessa.features.registry import FeatureRegistry
 from tessa.io.stat_plots import (
     calibration_plot,
     cluster_class_heatmap_panel,
@@ -73,6 +69,9 @@ from tessa.io.stat_plots import (
 DATA_ROOT = Path("demo_data")
 OUTPUT_DIR = Path("demo_outputs")
 RANDOM_SEED = 42
+ASSETS = ["A01", "A02", "A03"]
+CLASSES = ["TP", "FP", "TN", "FN"]
+REPLACEMENT_TYPES = ["bearing", "seal"]
 N_EVENTS_PER_CLASS = 20  # events per (class, asset) combination
 EVENT_LEN_HOURS = 6  # samples per event at 1-sample/min → 360 rows
 
@@ -124,8 +123,9 @@ def generate_synthetic_data(
         folder.mkdir(parents=True, exist_ok=True)
 
         for cls in classes:
-            repl_type = rng.choice(replacement_types)
             for _ in range(n_per_class):
+                # Drawn per event, so every stratum holds every class.
+                repl_type = str(rng.choice(replacement_types))
                 start = base_time + timedelta(days=offset_days)
                 end = start + timedelta(hours=event_len_h)
                 offset_days += 1
@@ -155,12 +155,91 @@ def generate_synthetic_data(
 # ── 2. Feature registration ───────────────────────────────────────────────────
 
 
-def register_features() -> None:
+def register_features() -> FeatureRegistry:
+    """Return a fresh registry holding the demo's rolling features.
+
+    A private registry rather than the process-wide default, which refuses
+    duplicate names, so this can run again (e.g. a re-run notebook cell).
+    """
+    registry = FeatureRegistry()
     for signal in ("temperature", "vibration", "pressure"):
-        make_rolling_mean(signal, window=10)
-        make_rolling_std(signal, window=10)
-        make_zscore(signal, window=30)
-        make_first_difference(signal)
+        make_rolling_mean(signal, window=10, registry=registry)
+        make_rolling_std(signal, window=10, registry=registry)
+        make_zscore(signal, window=30, registry=registry)
+        make_first_difference(signal, registry=registry)
+    return registry
+
+
+# ── 2b. Shared pipeline (also used by demo_notebook.ipynb) ────────────────────
+
+
+def prepare_data(
+    rng: np.random.Generator,
+) -> tuple[pl.DataFrame, dict[str, pl.LazyFrame], pl.DataFrame]:
+    """Synthesise the data, build the events and aggregate one row per event.
+
+    Returns ``(labels, events, period)``.
+    """
+    # Only our own asset folders: the AI demo (`tessa-agent --make-demo`) may
+    # keep its data under the same root.
+    for asset in ASSETS:
+        shutil.rmtree(cfg.asset_dir(asset), ignore_errors=True)
+
+    print(
+        f"  Synthetic data: {len(ASSETS)} assets × {len(CLASSES)} classes"
+        f" × {N_EVENTS_PER_CLASS} events each"
+    )
+    labels = generate_synthetic_data(
+        assets=ASSETS,
+        classes=CLASSES,
+        replacement_types=REPLACEMENT_TYPES,
+        n_per_class=N_EVENTS_PER_CLASS,
+        event_len_h=EVENT_LEN_HOURS,
+        rng=rng,
+    )
+    print(f"  Label table : {labels.shape[0]} events")
+
+    events = build(labels, cfg=cfg)
+    period = to_period(
+        events,
+        cfg=cfg,
+        aggregators=["mean", "std", "min", "max", "p05", "p95"],
+        feature_registry=register_features(),
+    )
+    print(f"  Period table: {period.shape[0]} rows × {period.shape[1]} columns")
+    return labels, events, period
+
+
+def analysis_suite() -> list:
+    """The supervised and corroborating analyses run on the period table."""
+    return [
+        DistributionAnalysis(),
+        PairwiseSeparability(top_n=15, bootstrap_n=300),
+        FeatureImportance(
+            rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
+            permutation_repeats=5,
+        ),
+        ImportanceStability(
+            n_bootstrap=80,
+            top_k=10,
+            rf_params={"n_estimators": 80, "n_jobs": -1, "random_state": RANDOM_SEED},
+        ),
+        ClusterAnalysis(),
+        ClusterValidation(n_permutations=400),
+        ClassifierEvaluation(run_lgb=True, run_xgb=True),
+        CrossValidatedClassifier(
+            n_splits=5,  # folds are grouped by asset, so this caps at 3 here
+            rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
+        ),
+        Stratified(
+            inner=FeatureImportance(
+                name="importance_strat",
+                rf_params={"n_estimators": 100, "n_jobs": -1, "random_state": RANDOM_SEED},
+                permutation_repeats=3,
+            ),
+            by="replacement_type",
+        ),
+    ]
 
 
 # ── 3. Pretty-print helpers ───────────────────────────────────────────────────
@@ -184,10 +263,12 @@ def print_importance(result: dict) -> None:
 
 
 def print_classifier(result: dict) -> None:
-    _hr("Classifier Evaluation")
+    _hr("Classifier Evaluation  (confusion matrix: rows = true, columns = predicted)")
+    names = result["class_names"]
     for name, r in result["models"].items():
         print(f"\n  {name}  — accuracy {r['accuracy']:.3f}")
-        print(textwrap.indent(str(r["confusion_matrix"]), "    "))
+        cm = pd.DataFrame(r["confusion_matrix"], index=names, columns=names)
+        print(textwrap.indent(cm.to_string(), "    "))
 
 
 def print_pairwise(result: dict) -> None:
@@ -210,7 +291,7 @@ def print_distributions(result: dict) -> None:
     print(summary[cols].to_string(index=False))
 
 
-def _find_pair(pairs: dict, *wanted: str) -> tuple:
+def find_pair(pairs: dict, *wanted: str) -> tuple:
     """Find a pair key matching ``wanted`` classes in any order."""
     target = set(wanted)
     for key in pairs:
@@ -222,7 +303,7 @@ def _find_pair(pairs: dict, *wanted: str) -> tuple:
 def print_pairwise_extended(result: dict) -> None:
     _hr("Pairwise — extended battery  (top-5 features for FP vs TP)")
     pairs = result["pairs"]
-    key = _find_pair(pairs, "FP", "TP")
+    key = find_pair(pairs, "FP", "TP")
     df = pairs[key]
     cols = [
         "feature",
@@ -378,7 +459,7 @@ def save_diagnostics_figures(
     saved: list[Path] = []
 
     pairs = pairwise_result["pairs"]
-    key = _find_pair(pairs, *pair) if pairs else None
+    key = find_pair(pairs, *pair) if pairs else None
     pair_tbl = pairs.get(key) if key else None
     pair_label = f"{key[0]} vs {key[1]}" if key else ""
 
@@ -400,19 +481,8 @@ def save_diagnostics_figures(
         fig = method_agreement_heatmap(agree)
         p = output_dir / "demo_method_agreement.png"
         fig.savefig(p, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-    saved.append(p)
-
-    # 3) Calibration curve (binary: TP-vs-FP subset)
-    proba = cv_result.get("oof_proba")
-    if proba is not None and proba.shape[1] == 2:
-        # Re-derive y_true from the cv result: oof_pred and y align by index in ctx
-        # Use the binary positive-class column directly.
-        # We rely on oof_pred not being -1 anywhere (StratifiedKFold covers all).
-        # The "true" labels were attached via prepare_xy; safest: recompute from
-        # the cv_result's class_names by matching oof_pred against itself is
-        # nonsense, so caller must pass y_true alongside. We keep this best-effort.
-        pass  # calibration drawn in main() where we have y_true on hand.
+        plt.close(fig)
+        saved.append(p)
 
     for path in saved:
         print(f"  Figure saved → {path}")
@@ -492,6 +562,7 @@ def save_calibration_figure(
 
 
 def run_new_capabilities(
+    run: Run,
     period: pl.DataFrame,
     events: dict[str, pl.LazyFrame],
     rng: np.random.Generator,
@@ -501,9 +572,10 @@ def run_new_capabilities(
     separability test, anomaly ensemble, correlation structure, MI network,
     label spreading, PU learning, changepoint + lagged relations on a raw
     event, and ResultStore + static HTML report persistence.
-    """
-    run = Run(period, target_col="class", cfg=cfg)
 
+    ``run`` already holds the analysis suite, so the saved run and the
+    report cover everything, not just this section.
+    """
     _hr("Separability — are the classes distinguishable at all?")
     sep = run.separability(
         n_permutations=200,
@@ -628,84 +700,26 @@ def run_new_capabilities(
 
 
 def main() -> None:
+    # Script-only setup, kept out of import time so the notebook importing this
+    # module keeps its own console and inline plotting backend.
+    for stream in (sys.stdout, sys.stderr):
+        # Box-drawing / Unicode output on legacy console codepages (e.g. cp1252).
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+    matplotlib.use("Agg")  # headless
+
     print("tessa demo — end-to-end pipeline")
-
-    # --- Regenerate synthetic data ---
-    if DATA_ROOT.exists():
-        shutil.rmtree(DATA_ROOT)
-
     rng = np.random.default_rng(RANDOM_SEED)
-    assets = ["A01", "A02", "A03"]
-    classes = ["TP", "FP", "TN", "FN"]
-    replacement_types = ["bearing", "seal"]
 
-    print(
-        f"\n[1/6] Generating synthetic data  ({len(assets)} assets × {len(classes)} classes"
-        f" × {N_EVENTS_PER_CLASS} events each) ..."
-    )
-    labels = generate_synthetic_data(
-        assets=assets,
-        classes=classes,
-        replacement_types=replacement_types,
-        n_per_class=N_EVENTS_PER_CLASS,
-        event_len_h=EVENT_LEN_HOURS,
-        rng=rng,
-    )
-    print(f"   Label table: {labels.shape[0]} events")
+    print("\n[1/4] Generating synthetic data + materialising period aggregates ...")
+    _, events, period = prepare_data(rng)
 
-    print("\n[2/6] Registering features ...")
-    register_features()
+    print("\n[2/4] Running analysis suite ...")
+    # One Run holds every result, so its save() / report() cover them all.
+    run = Run(period, target_col="class", cfg=cfg, label_filter={"class": CLASSES})
+    results = run_analyses(analysis_suite(), run.ctx)
 
-    print("\n[3/6] Building event dataset + materialising period aggregates ...")
-    events = build(labels, cfg=cfg)
-    period = to_period(
-        events,
-        cfg=cfg,
-        aggregators=["mean", "std", "min", "max", "p05", "p95"],
-    )
-    print(f"   Period table: {period.shape[0]} rows × {period.shape[1]} columns")
-
-    print("\n[4/6] Running analysis suite ...")
-    ctx = AnalysisContext(
-        df=period,
-        cfg=cfg,
-        target_col="class",
-        label_filter={"class": ["TP", "FP", "TN", "FN"]},
-        stratify_by="replacement_type",
-        output_dir=str(OUTPUT_DIR),
-    )
-
-    analyses = [
-        DistributionAnalysis(),
-        PairwiseSeparability(top_n=15, bootstrap_n=300),
-        FeatureImportance(
-            rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
-            permutation_repeats=5,
-        ),
-        ImportanceStability(
-            n_bootstrap=80,
-            top_k=10,
-            rf_params={"n_estimators": 80, "n_jobs": -1, "random_state": RANDOM_SEED},
-        ),
-        ClusterAnalysis(),
-        ClusterValidation(n_permutations=400),
-        ClassifierEvaluation(run_lgb=True, run_xgb=True),
-        CrossValidatedClassifier(
-            n_splits=5,
-            rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
-        ),
-        Stratified(
-            inner=FeatureImportance(
-                name="importance_strat",
-                rf_params={"n_estimators": 100, "n_jobs": -1, "random_state": RANDOM_SEED},
-                permutation_repeats=3,
-            ),
-            by="replacement_type",
-        ),
-    ]
-    results = run_analyses(analyses, ctx)
-
-    print("\n[5/6] Results")
+    print("\n[3/4] Results")
     print_distributions(results["distributions"])
     print_pairwise(results["pairwise"])
     print_pairwise_extended(results["pairwise"])
@@ -744,14 +758,14 @@ def main() -> None:
     ).run(binary_ctx)
     save_calibration_figure(binary_ctx, binary_cv, OUTPUT_DIR)
     save_permutation_null_figure(
-        ctx,
+        run.ctx,
         results["cluster_validation"],
         OUTPUT_DIR,
         n_perm=400,
     )
 
-    print("\n[6/6] New capabilities: unsupervised / semi-supervised / persistence")
-    run_new_capabilities(period, events, rng)
+    print("\n[4/4] New capabilities: unsupervised / semi-supervised / persistence")
+    run_new_capabilities(run, period, events, rng)
 
     print("\nDone.\n")
 
