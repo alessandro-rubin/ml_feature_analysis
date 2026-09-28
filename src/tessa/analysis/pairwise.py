@@ -70,6 +70,50 @@ def _safe_test(fn, va: np.ndarray, vb: np.ndarray) -> tuple[float, float]:
         return float("nan"), float("nan")
 
 
+def summarize_pairs(
+    pairs: dict[tuple[str, str], pd.DataFrame],
+    alpha: float = 0.05,
+    p_col: str = "mwu_p_bh_fdr",
+) -> pd.DataFrame:
+    """One row per class pair: how many features separate it after correction.
+
+    ``n_significant`` counts features whose ``p_col`` (BH-FDR-adjusted by
+    default) is below ``alpha``; ``best_feature`` / ``best_auc_significant``
+    describe the strongest of them. ``best_auc_raw`` is the best AUC over all
+    features, reported for completeness but inflated by selection: the best
+    of many noise features sits well above 0.5.
+    """
+    rows = []
+    for (a, b), df in pairs.items():
+        auc = df["auc"] if "auc" in df.columns else pd.Series(np.nan, index=df.index)
+        sig = df[p_col] < alpha if p_col in df.columns else pd.Series(False, index=df.index)
+        sig_auc = auc[sig].dropna()
+        best = sig_auc.idxmax() if len(sig_auc) else None
+        rows.append(
+            {
+                "class_a": a,
+                "class_b": b,
+                "n_features": int(len(df)),
+                "n_significant": int(sig.sum()),
+                "best_feature": df.loc[best, "feature"] if best is not None else None,
+                "best_auc_significant": float(sig_auc.max()) if best is not None else np.nan,
+                "best_auc_raw": float(auc.max()) if auc.notna().any() else np.nan,
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "class_a",
+            "class_b",
+            "n_features",
+            "n_significant",
+            "best_feature",
+            "best_auc_significant",
+            "best_auc_raw",
+        ],
+    )
+
+
 @dataclass
 class PairwiseSeparability:
     """For each pair of classes, score every feature for discriminative power.
@@ -82,6 +126,11 @@ class PairwiseSeparability:
             plus ``*_bh_fdr`` / ``*_bonferroni`` columns and
             ``auc_ci_low``, ``auc_ci_high``, ``cliffs_ci_low``,
             ``cliffs_ci_high`` when ``bootstrap_n > 0``.
+        ``pairs_long``: the same tables stacked, with ``class_a`` /
+            ``class_b`` columns (survives the result store).
+        ``pair_summary``: one row per pair from :func:`summarize_pairs`,
+            computed before any ``top_n`` cut so its counts cover every
+            feature.
     """
 
     name: str = "pairwise"
@@ -201,15 +250,16 @@ class PairwiseSeparability:
                     df[f"{col}_bh_fdr"] = benjamini_hochberg(df[col].values)
                     df[f"{col}_bonferroni"] = bonferroni(df[col].values)
 
-            df = (
+            results[(a, b)] = (
                 df.assign(abs_delta=lambda d: d["cliffs_delta"].abs())
                 .sort_values(["auc", "abs_delta"], ascending=False)
                 .drop(columns="abs_delta")
                 .reset_index(drop=True)
             )
-            if self.top_n:
-                df = df.head(self.top_n)
-            results[(a, b)] = df
+
+        pair_summary = summarize_pairs(results)
+        if self.top_n:
+            results = {pair: df.head(self.top_n) for pair, df in results.items()}
 
         # `pairs` is a dict keyed by class tuples — the store drops it, so the
         # dashboard/report would lose the volcano + AUC-CI plots. A flattened
@@ -223,4 +273,4 @@ class PairwiseSeparability:
         else:
             pairs_long = pd.DataFrame()
 
-        return {"pairs": results, "pairs_long": pairs_long}
+        return {"pairs": results, "pairs_long": pairs_long, "pair_summary": pair_summary}

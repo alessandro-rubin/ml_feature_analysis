@@ -166,6 +166,10 @@ class CrossValidatedClassifier:
             "summary": summary,
             "oof_pred": oof_pred,
             "oof_proba": oof_proba,
+            # Encoded true labels, row-aligned with the OOF arrays: enough to
+            # rebuild a pooled confusion matrix or calibration curve from a
+            # stored run.
+            "y_true": y,
             "class_names": prep.class_names,
             # Validation provenance: what these metrics actually generalise to.
             "cv_scheme": plan.scheme,

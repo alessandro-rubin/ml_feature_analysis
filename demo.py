@@ -9,6 +9,7 @@ replacement-type strata, then runs the full pipeline:
                ->  period aggregate  ->  analysis suite
                ->  separability / anomaly / semi-supervised / changepoint
                ->  ResultStore run + static HTML report
+               ->  figures: one-page overview + every curated plot
 
 Run:
     python demo.py
@@ -33,9 +34,10 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
+from sklearn.metrics import confusion_matrix
+
 from tessa import Config, Run
 from tessa.analysis import (
-    AnalysisContext,
     ClassifierEvaluation,
     ClusterAnalysis,
     ClusterValidation,
@@ -55,14 +57,19 @@ from tessa.features.builtins import (
     make_rolling_std,
     make_zscore,
 )
-from tessa.features.materialize import to_period, to_per_sample, to_windowed  # noqa: F401
+from tessa.features.materialize import to_period
 from tessa.features.registry import FeatureRegistry
 from tessa.io.stat_plots import (
-    calibration_plot,
-    cluster_class_heatmap_panel,
-    diagnostics_panel,
-    method_agreement_heatmap,
+    class_colors,
+    confusion_headline,
+    confusion_matrix_plot,
+    dominant_confusion,
+    pair_separability_headline,
+    pair_separability_matrix,
+    theme,
 )
+from tessa.results import AnalysisResult
+from tessa.results.figures import figures_for_result
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -214,7 +221,8 @@ def analysis_suite() -> list:
     """The supervised and corroborating analyses run on the period table."""
     return [
         DistributionAnalysis(),
-        PairwiseSeparability(top_n=15, bootstrap_n=300),
+        # No top_n: the volcano plot needs every feature, not only the winners.
+        PairwiseSeparability(bootstrap_n=300),
         FeatureImportance(
             rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
             permutation_repeats=5,
@@ -392,170 +400,119 @@ def print_stratified(result: dict) -> None:
         print(f"  {stratum:12s}  →  {top}  (composite={score:.3f})")
 
 
-# ── 4. Summary figure ─────────────────────────────────────────────────────────
+# ── 4. Figures ────────────────────────────────────────────────────────────────
 
 
-def save_summary_figure(
-    importance_result: dict,
-    distributions_result: dict,
-    output_dir: Path,
-) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
+def example_events_figure(
+    events: dict[str, pl.LazyFrame],
+    channel: str = "temperature",
+    per_class: int = 12,
+    smooth_min: int = 15,
+    axes: list[plt.Axes] | None = None,
+) -> plt.Figure:
+    """Overlay a few raw events per class: the signal the analyses separate.
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-    # Left: top-10 composite importance bar chart
-    tbl = importance_result["table"].head(10)
-    axes[0].barh(tbl.index[::-1], tbl["score_composite"][::-1], color="steelblue")
-    axes[0].set_xlabel("Composite importance score")
-    axes[0].set_title("Top-10 features by composite importance")
-
-    # Right: top-6 feature Kruskal-Wallis statistic
-    summary = distributions_result["summary"].head(6)
-    axes[1].bar(range(len(summary)), summary["kw_stat"], color="coral")
-    axes[1].set_xticks(range(len(summary)))
-    axes[1].set_xticklabels(summary["feature"], rotation=30, ha="right")
-    axes[1].set_ylabel("Kruskal-Wallis statistic")
-    axes[1].set_title("Top-6 features by class separability (KW)")
-
-    fig.tight_layout()
-    path = output_dir / "demo_summary.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-    print(f"\n  Figure saved → {path}")
-    return path
-
-
-def save_cluster_heatmap_figure(
-    clustering_result: dict,
-    output_dir: Path,
-) -> Path | None:
-    """Heatmap of how each algorithm's clusters distribute over the true classes."""
-    labels = clustering_result.get("labels")
-    if not labels:
-        return None
-    output_dir.mkdir(parents=True, exist_ok=True)
-    fig = cluster_class_heatmap_panel(
-        labels,
-        clustering_result["y_true"],
-        clustering_result["class_names"],
-    )
-    path = output_dir / "demo_cluster_class_heatmap.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  Figure saved → {path}")
-    return path
-
-
-def save_diagnostics_figures(
-    pairwise_result: dict,
-    stability_result: dict,
-    cv_result: dict,
-    output_dir: Path,
-    pair: tuple[str, str] = ("FP", "TP"),
-) -> list[Path]:
-    """Emit the corroboration-focused diagnostic figures."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    saved: list[Path] = []
-
-    pairs = pairwise_result["pairs"]
-    key = find_pair(pairs, *pair) if pairs else None
-    pair_tbl = pairs.get(key) if key else None
-    pair_label = f"{key[0]} vs {key[1]}" if key else ""
-
-    # 1) Composite diagnostics panel (volcano + AUC CI + stability + CV box)
-    fig = diagnostics_panel(
-        pair_table=pair_tbl,
-        pair_label=pair_label,
-        stability_table=stability_result["bootstrap_table"],
-        cv_per_fold=cv_result["per_fold"],
-    )
-    p = output_dir / "demo_diagnostics_panel.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-    saved.append(p)
-
-    # 2) Method-agreement heatmap (separate — needs its own colorbar)
-    agree = stability_result["method_agreement"]
-    if not agree.empty:
-        fig = method_agreement_heatmap(agree)
-        p = output_dir / "demo_method_agreement.png"
-        fig.savefig(p, dpi=120, bbox_inches="tight")
-        plt.close(fig)
-        saved.append(p)
-
-    for path in saved:
-        print(f"  Figure saved → {path}")
-    return saved
-
-
-def save_permutation_null_figure(
-    ctx: AnalysisContext,
-    cluster_validation_result: dict,
-    output_dir: Path,
-    n_perm: int = 500,
-) -> Path | None:
-    """Rebuild a small ARI null distribution and plot it next to the observed value.
-
-    `ClusterValidation` only persists summary statistics, so we re-derive
-    a fresh null here purely for visualisation.
+    Each thin line is one event's ``channel`` after a ``smooth_min``-minute
+    rolling mean, plotted against hours since the event start. Pass ``axes``
+    (one per class) to draw into an existing figure.
     """
-    from sklearn.metrics import adjusted_rand_score
+    by_class: dict[str, list[pl.DataFrame]] = {cls: [] for cls in CLASSES}
+    for lf in events.values():
+        if all(len(frames) >= per_class for frames in by_class.values()):
+            break
+        df = lf.select("timestamp", channel, "class").collect()
+        frames = by_class.get(df["class"][0])
+        if frames is not None and len(frames) < per_class:
+            frames.append(df)
 
-    labels = cluster_validation_result.get("labels_used")
-    if labels is None:
-        return None
-    summary = cluster_validation_result["summary"].iloc[0]
-    rng = np.random.default_rng(ctx.cfg.random_state)
-
-    # Re-encode the true labels exactly the way prepare_xy did (filtered + encoded).
-    from tessa.analysis.base import prepare_xy
-
-    prep = prepare_xy(ctx)
-    y = prep.y
-    mask = np.asarray(labels) != -1
-    y_kept = y[mask]
-    lab_kept = np.asarray(labels)[mask]
-
-    nulls = np.empty(n_perm, dtype=float)
-    perm = y_kept.copy()
-    for i in range(n_perm):
-        rng.shuffle(perm)
-        nulls[i] = adjusted_rand_score(perm, lab_kept)
-
-    from tessa.io.stat_plots import permutation_null_plot
-
-    fig = permutation_null_plot(
-        nulls,
-        observed=float(summary["ari"]),
-        p_value=float(summary["ari_perm_p"]),
-        statistic_name="ARI",
-    )
-    p = output_dir / "demo_permutation_null_ari.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  Figure saved → {p}")
-    return p
+    colors = class_colors(CLASSES)
+    with theme():
+        if axes is None:
+            _, grid = plt.subplots(
+                1, len(CLASSES), figsize=(3.3 * len(CLASSES), 3), sharey=True, squeeze=False
+            )
+            axes = list(grid[0])
+        for ax, cls in zip(axes, CLASSES):
+            for df in by_class[cls]:
+                hours = (df["timestamp"] - df["timestamp"][0]).dt.total_minutes() / 60
+                smooth = df[channel].rolling_mean(smooth_min)  # leading nulls: no warm-up spike
+                ax.plot(hours, smooth, color=colors[cls], lw=0.8, alpha=0.75)
+            ax.set_title(f"{cls}  ({len(by_class[cls])} events)")
+            ax.set_xlabel("hours since event start")
+            ax.yaxis.grid(True)
+        axes[0].set_ylabel(f"{channel}, {smooth_min}-min mean")
+    return axes[0].figure
 
 
-def save_calibration_figure(
-    ctx: AnalysisContext,
-    cv_result: dict,
+def overview_figure(events: dict[str, pl.LazyFrame], results: dict) -> plt.Figure:
+    """The demo's answer on one page.
+
+    Top: raw events per class. Bottom left: which class pairs separate (best
+    single-feature AUC among features surviving BH-FDR). Bottom right: where
+    the cross-validated classifier's errors go.
+    """
+    cv = results["cv_classifier"]
+    names = list(cv["class_names"])
+    cm = confusion_matrix(cv["y_true"], cv["oof_pred"], labels=range(len(names)))
+    pair_summary = results["pairwise"]["pair_summary"]
+
+    with theme():
+        fig = plt.figure(figsize=(14, 9.5))
+        grid = fig.add_gridspec(2, 4, height_ratios=[1, 1.5], hspace=0.45, wspace=0.35)
+        top = [fig.add_subplot(grid[0, 0])]
+        top += [fig.add_subplot(grid[0, i], sharey=top[0]) for i in range(1, len(CLASSES))]
+        example_events_figure(events, axes=top)
+        pair_separability_matrix(pair_summary, class_names=names, ax=fig.add_subplot(grid[1, :2]))
+        confusion_matrix_plot(
+            cm,
+            names,
+            title="Cross-validated confusion (out-of-fold)\n" + confusion_headline(cm, names),
+            ax=fig.add_subplot(grid[1, 2:]),
+        )
+        headline = pair_separability_headline(pair_summary)
+        dom = dominant_confusion(cm, names)
+        if dom is not None:
+            headline += f" — {dom[0]:.0%} of classifier errors are {dom[1]} ↔ {dom[2]}"
+        fig.suptitle(
+            f"{headline}\nTP and FP events carry a temperature burst; "
+            "TN and FN are generated identically, so nothing should separate them",
+            y=0.99,
+        )
+    return fig
+
+
+def save_figures(
+    run: Run,
+    binary: Run,
+    events: dict[str, pl.LazyFrame],
+    results: dict,
     output_dir: Path,
-) -> Path | None:
-    """Calibration curve from the binary CV out-of-fold probabilities."""
-    proba = cv_result.get("oof_proba")
-    if proba is None or proba.shape[1] != 2:
-        return None
-    from tessa.analysis.base import prepare_xy
+) -> list[Path]:
+    """Write the overview plus every curated figure of both runs as PNGs.
 
-    prep = prepare_xy(ctx)
-    fig = calibration_plot(prep.y, proba[:, 1], n_bins=10)
-    p = output_dir / "demo_calibration.png"
-    fig.savefig(p, dpi=120, bbox_inches="tight")
+    The per-analysis plots come from the same factory as the HTML report and
+    the dashboard, so all three show the same thing. ``figures/`` is rebuilt
+    from scratch so renamed or dropped plots don't linger.
+    """
+    fig_dir = output_dir / "figures"
+    shutil.rmtree(fig_dir, ignore_errors=True)
+    fig_dir.mkdir(parents=True)
+
+    saved = [output_dir / "overview.png"]
+    fig = overview_figure(events, results)
+    fig.savefig(saved[0], dpi=120, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Figure saved → {p}")
-    return p
+
+    for prefix, r in (("", run), ("tp_vs_fp__", binary)):
+        # One analysis at a time keeps only a handful of figures open.
+        for name, raw in r.ctx.results.items():
+            titled = figures_for_result(AnalysisResult.from_raw(name, raw))
+            for i, (_, fig) in enumerate(titled):
+                path = fig_dir / f"{prefix}{name}_{i}.png"
+                fig.savefig(path, dpi=110, bbox_inches="tight")
+                plt.close(fig)
+                saved.append(path)
+    return saved
 
 
 # ── 4b. New-capabilities tour (v0.1: unsupervised / semi-supervised / report) ──
@@ -711,15 +668,15 @@ def main() -> None:
     print("tessa demo — end-to-end pipeline")
     rng = np.random.default_rng(RANDOM_SEED)
 
-    print("\n[1/4] Generating synthetic data + materialising period aggregates ...")
+    print("\n[1/5] Generating synthetic data + materialising period aggregates ...")
     _, events, period = prepare_data(rng)
 
-    print("\n[2/4] Running analysis suite ...")
+    print("\n[2/5] Running analysis suite ...")
     # One Run holds every result, so its save() / report() cover them all.
     run = Run(period, target_col="class", cfg=cfg, label_filter={"class": CLASSES})
     results = run_analyses(analysis_suite(), run.ctx)
 
-    print("\n[3/4] Results")
+    print("\n[3/5] Results")
     print_distributions(results["distributions"])
     print_pairwise(results["pairwise"])
     print_pairwise_extended(results["pairwise"])
@@ -731,41 +688,19 @@ def main() -> None:
     print_cv(results["cv_classifier"])
     print_stratified(results["stratified__importance_strat"])
 
-    save_summary_figure(
-        importance_result=results["importance"],
-        distributions_result=results["distributions"],
-        output_dir=OUTPUT_DIR,
-    )
-    save_cluster_heatmap_figure(results["clustering"], OUTPUT_DIR)
-    save_diagnostics_figures(
-        pairwise_result=results["pairwise"],
-        stability_result=results["importance_stability"],
-        cv_result=results["cv_classifier"],
-        output_dir=OUTPUT_DIR,
-        pair=("FP", "TP"),
-    )
-    # Calibration only makes sense for binary — re-run a binary CV on TP vs FP.
-    binary_ctx = AnalysisContext(
-        df=period,
-        cfg=cfg,
-        target_col="class",
-        label_filter={"class": ["TP", "FP"]},
-        output_dir=str(OUTPUT_DIR),
-    )
-    binary_cv = CrossValidatedClassifier(
+    print("\n[4/5] New capabilities: unsupervised / semi-supervised / persistence")
+    run_new_capabilities(run, period, events, rng)
+
+    print("\n[5/5] Figures")
+    # Calibration needs a binary problem: cross-validate TP vs FP on its own.
+    binary = Run(period, target_col="class", cfg=cfg, label_filter={"class": ["TP", "FP"]})
+    binary.cv_classifier(
         n_splits=5,
         rf_params={"n_estimators": 200, "n_jobs": -1, "random_state": RANDOM_SEED},
-    ).run(binary_ctx)
-    save_calibration_figure(binary_ctx, binary_cv, OUTPUT_DIR)
-    save_permutation_null_figure(
-        run.ctx,
-        results["cluster_validation"],
-        OUTPUT_DIR,
-        n_perm=400,
     )
-
-    print("\n[4/4] New capabilities: unsupervised / semi-supervised / persistence")
-    run_new_capabilities(run, period, events, rng)
+    saved = save_figures(run, binary, events, results, OUTPUT_DIR)
+    print(f"  Overview     → {saved[0]}")
+    print(f"  Per-analysis → {OUTPUT_DIR / 'figures'}  ({len(saved) - 1} PNGs)")
 
     print("\nDone.\n")
 

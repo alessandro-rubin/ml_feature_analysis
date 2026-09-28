@@ -84,11 +84,27 @@ def test_heatmap_handles_all_noise_gracefully():
     plt.close(fig)
 
 
-def test_panel_draws_one_heatmap_per_algorithm():
+def test_panel_draws_one_heatmap_per_algorithm_with_clusters():
     ctx = AnalysisContext(df=_separable_df(), cfg=Config(), target_col="class")
     out = ClusterAnalysis().run(ctx)
     fig = cluster_class_heatmap_panel(out["labels"], out["y_true"], out["class_names"])
     assert isinstance(fig, plt.Figure)
-    # one heatmap Axes per algorithm (colorbars add extra axes, hence >=)
-    assert len(fig.axes) >= len(out["labels"])
+    with_clusters = [
+        lab for lab in out["labels"].values() if len(set(lab[lab != -1].tolist())) >= 2
+    ]
+    assert sum(len(ax.images) for ax in fig.axes) == len(with_clusters)
+    plt.close(fig)
+
+
+def test_panel_lists_algorithms_it_cannot_draw():
+    y_true = np.array([0, 0, 1, 1])
+    labels = {
+        "good": np.array([0, 0, 1, 1]),
+        "one": np.array([0, 0, 0, 0]),
+        "noisy": np.array([-1, -1, -1, -1]),
+    }
+    fig = cluster_class_heatmap_panel(labels, y_true, ["A", "B"])
+    assert sum(len(ax.images) for ax in fig.axes) == 1
+    assert "one (1 cluster)" in fig.get_suptitle()
+    assert "noisy (all noise)" in fig.get_suptitle()
     plt.close(fig)
