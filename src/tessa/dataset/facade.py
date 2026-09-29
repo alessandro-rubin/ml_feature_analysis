@@ -29,7 +29,7 @@ from tessa.dataset.availability import (
     _filter_available,
     data_availability,
 )
-from tessa.dataset.builder import build
+from tessa.dataset.builder import EventFrames, build
 
 
 @dataclass
@@ -71,9 +71,7 @@ class Dataset:
         """
         return load_event(asset_id, start, end, self.cfg, columns=columns)
 
-    def events(
-        self, labels: pl.DataFrame, columns: list[str] | None = None
-    ) -> dict[str, pl.LazyFrame]:
+    def events(self, labels: pl.DataFrame, columns: list[str] | None = None) -> EventFrames:
         """Per-event LazyFrames with label metadata attached (see builder)."""
         return build(labels, self.cfg, columns=columns)
 

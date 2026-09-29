@@ -108,6 +108,11 @@ class AnalysisContext:
     `stratify_by` is consumed by the Stratified wrapper, not by base analyses.
     `results` accumulates outputs keyed by analysis name.
     `null_policy` governs null handling at the sklearn boundary.
+    `label_cols` are label-metadata columns (e.g. the ``label_cols`` of the
+    :class:`~tessa.dataset.EventFrames` the table was built from): kept in
+    `df` for filtering and stratifying, but never used as features, whatever
+    their dtype. A numeric label column (a severity score, a work-order ID)
+    would otherwise let a model read the label instead of the signal.
     """
 
     df: pl.DataFrame
@@ -118,6 +123,7 @@ class AnalysisContext:
     output_dir: str | None = None
     results: dict[str, Any] = field(default_factory=dict)
     null_policy: NullPolicy = field(default_factory=NullPolicy)
+    label_cols: tuple[str, ...] = ()
     _xy_cache: dict[tuple, "PreparedXY"] = field(default_factory=dict, repr=False)
 
     def filtered(self) -> pl.DataFrame:
@@ -176,7 +182,7 @@ def prepare_xy(
 
     target = ctx.target_col
     ids_known = id_cols_for(ctx.cfg)
-    drop = set(drop_cols) | set(ids_known) | {ctx.cfg.timestamp_col}
+    drop = set(drop_cols) | set(ids_known) | set(ctx.label_cols) | {ctx.cfg.timestamp_col}
     if target is not None:
         drop.add(target)
 

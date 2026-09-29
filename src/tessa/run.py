@@ -17,7 +17,7 @@ kwargs returns the cached result instead of refitting.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import polars as pl
 
@@ -73,13 +73,22 @@ class Run:
         cfg: Config | None = None,
         label_filter=None,
         null_policy: NullPolicy | None = None,
+        label_cols: Iterable[str] = (),
     ):
+        """Bind a table and the question to ask of it.
+
+        ``label_cols`` names label-metadata columns that must never become
+        features, whatever their dtype; pass the ``label_cols`` of the
+        :class:`~tessa.dataset.EventFrames` the table was materialised from.
+        The target, ``event_id`` and the asset column are always excluded.
+        """
         self.ctx = AnalysisContext(
             df=df,
             cfg=cfg or Config(),
             target_col=target_col,
             label_filter=label_filter,
             null_policy=null_policy or NullPolicy(),
+            label_cols=tuple(label_cols),
         )
 
     # ── generic execution ───────────────────────────────────────────────────

@@ -33,25 +33,42 @@ from tessa.features.registry import (
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _label_cols_from_schema(schema: pl.Schema, cfg: Config) -> list[str]:
+def _label_cols_from_schema(
+    schema: pl.Schema, cfg: Config, declared: Iterable[str] = ()
+) -> list[str]:
     """Label/id columns given an already-resolved schema (see `_label_cols`)."""
-    candidates = ["event_id", cfg.asset_col, cfg.class_col]
-    return [c for c in candidates if c in schema.names()] + [
-        c
-        for c in schema.names()
-        if c not in candidates and c != cfg.timestamp_col and not schema[c].is_numeric()
+    names = schema.names()
+    candidates = list(dict.fromkeys(["event_id", cfg.asset_col, cfg.class_col, *declared]))
+    known = [c for c in candidates if c in names and c != cfg.timestamp_col]
+    return known + [
+        c for c in names if c not in known and c != cfg.timestamp_col and not schema[c].is_numeric()
     ]
 
 
-def _label_cols(lf: pl.LazyFrame, cfg: Config) -> list[str]:
+def _label_cols(lf: pl.LazyFrame, cfg: Config, declared: Iterable[str] = ()) -> list[str]:
     """Return the columns that came from label metadata + ids.
 
-    Heuristic: known label/id columns (``event_id``, ``asset_id``,
-    ``cfg.class_col``) plus any other non-numeric, non-timestamp columns.
-    Used by the materialisers to know what to carry through aggregation
-    and what to exclude from automatic source selection.
+    A column is a label column when it is one of the known label/id columns
+    (``event_id``, ``cfg.asset_col``, ``cfg.class_col``), when it is
+    *declared* as one (``declared``, normally the ``label_cols`` recorded by
+    :func:`tessa.dataset.builder.build`), or, as a fallback for frames built
+    by hand, when it is non-numeric and not the timestamp. Declared columns
+    are labels whatever their dtype, so a numeric label column is never
+    aggregated as a signal. Used by the materialisers to know what to carry
+    through aggregation and what to exclude from automatic source selection.
     """
-    return _label_cols_from_schema(lf.collect_schema(), cfg)
+    return _label_cols_from_schema(lf.collect_schema(), cfg, declared)
+
+
+def _declared_label_cols(lfs: object, label_cols: Iterable[str] | None) -> tuple[str, ...]:
+    """Union of ``label_cols`` and the ``label_cols`` recorded on ``lfs``.
+
+    ``lfs`` carries them when it is the :class:`~tessa.dataset.EventFrames`
+    returned by :func:`tessa.dataset.builder.build`; a plain dict, list or
+    LazyFrame does not.
+    """
+    recorded = getattr(lfs, "label_cols", None) or ()
+    return tuple(dict.fromkeys([*recorded, *(label_cols or ())]))
 
 
 def _resolve_features(
@@ -116,6 +133,7 @@ def to_windowed(
     feature_names: list[str] | None = None,
     feature_registry: FeatureRegistry | None = None,
     aggregator_registry: AggregatorRegistry | None = None,
+    label_cols: Iterable[str] | None = None,
 ) -> pl.LazyFrame:
     """Group each event into fixed time windows and aggregate within each.
 
@@ -151,6 +169,14 @@ def to_windowed(
         Source of feature specs. Defaults to the process-wide registry.
     aggregator_registry : AggregatorRegistry, optional
         Source of aggregator specs. Defaults to the process-wide registry.
+    label_cols : iterable of str, optional
+        Columns that are label metadata, whatever their dtype: they are
+        carried through via ``.first()`` and never aggregated. Added to
+        ``event_id``, ``cfg.asset_col``, ``cfg.class_col``, any non-numeric
+        column, and the ``label_cols`` recorded on an
+        :class:`~tessa.dataset.EventFrames` input. A single event frame
+        carries no such record, so pass ``label_cols=events.label_cols``
+        when calling this per event.
 
     Returns
     -------
@@ -165,7 +191,7 @@ def to_windowed(
     base = to_per_sample(lf, cfg, feature_names, fr)
 
     schema = base.collect_schema()
-    label_cols = _label_cols(base, cfg)
+    label_cols = _label_cols_from_schema(schema, cfg, _declared_label_cols(lf, label_cols))
     if sources is None:
         sources = [
             c
@@ -208,6 +234,7 @@ def to_period(
     feature_names: list[str] | None = None,
     feature_registry: FeatureRegistry | None = None,
     aggregator_registry: AggregatorRegistry | None = None,
+    label_cols: Iterable[str] | None = None,
 ) -> pl.DataFrame:
     """Collapse each event to a single row of summary statistics.
 
@@ -229,8 +256,10 @@ def to_period(
     ----------
     lfs : dict, iterable, or pl.LazyFrame
         Either a single event LazyFrame, an iterable of them, or the
-        ``{event_id: LazyFrame}`` dict returned by
-        :func:`tessa.dataset.builder.build`.
+        ``{event_id: LazyFrame}`` mapping returned by
+        :func:`tessa.dataset.builder.build` (an
+        :class:`~tessa.dataset.EventFrames`, whose recorded label columns
+        are honoured).
     cfg : Config
         Project configuration; ``cfg.timestamp_col`` is excluded from
         automatic source selection.
@@ -247,16 +276,26 @@ def to_period(
         Source of feature specs. Defaults to the process-wide registry.
     aggregator_registry : AggregatorRegistry, optional
         Source of aggregator specs. Defaults to the process-wide registry.
+    label_cols : iterable of str, optional
+        Columns that are label metadata, whatever their dtype: they are
+        carried through via ``.first()`` and never aggregated. Added to
+        ``event_id``, ``cfg.asset_col``, ``cfg.class_col``, any non-numeric
+        column, and the ``label_cols`` recorded on an
+        :class:`~tessa.dataset.EventFrames` input. Needed only for
+        frames built by hand or a subset taken with a plain dict
+        comprehension.
 
     Returns
     -------
     pl.DataFrame
         One row per input event (input order preserved), with columns
-        ``"<source>__<aggregator>"`` plus any label columns.
+        ``"<source>__<aggregator>"`` plus the label columns, each holding
+        its first value within the event.
         Returns an empty :class:`pl.DataFrame` if ``lfs`` is empty.
     """
     fr = feature_registry or default_features()
     ar = aggregator_registry or default_aggs()
+    declared = _declared_label_cols(lfs, label_cols)
 
     if isinstance(lfs, pl.LazyFrame):
         items = [lfs]
@@ -272,16 +311,16 @@ def to_period(
     bases = [to_per_sample(lf, cfg, feature_names, fr) for lf in items]
     # Events share one schema (same files, same features): resolve once.
     schema = bases[0].collect_schema()
-    label_cols = _label_cols_from_schema(schema, cfg)
+    label_names = _label_cols_from_schema(schema, cfg, declared)
     srcs = sources
     if srcs is None:
         srcs = [
             c
             for c in schema.names()
-            if c != cfg.timestamp_col and c not in label_cols and schema[c].is_numeric()
+            if c != cfg.timestamp_col and c not in label_names and schema[c].is_numeric()
         ]
     agg_exprs = [ar.get(a).apply(s) for s in srcs for a in aggregators]
-    label_exprs = [pl.col(c).first().alias(c) for c in label_cols]
+    label_exprs = [pl.col(c).first().alias(c) for c in label_names]
 
     lazy_rows = [base.select(label_exprs + agg_exprs) for base in bases]
     return pl.concat(pl.collect_all(lazy_rows), how="vertical_relaxed")

@@ -4,8 +4,11 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from tessa import Config
-from tessa.dataset import build, load_asset, load_event
+from tessa import Config, Run
+from tessa.analysis.base import prepare_xy
+from tessa.dataset import EventFrames, build, load_asset, load_event
+from tessa.features import to_period
+from tessa.features.windows import WindowSpec, materialize
 
 
 @pytest.fixture
@@ -71,3 +74,72 @@ def test_build_attaches_labels(fake_data: Config):
     assert df["replacement_type"][0] == "bearing"
     assert df["asset_id"][0] == "A1"
     assert {"x", "y", "z"} <= set(df.columns)
+
+
+def _labels_with_numeric_extra() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "asset_id": ["A1", "A1"],
+            "start": [datetime(2024, 1, 10), datetime(2024, 1, 20)],
+            "end": [datetime(2024, 1, 12), datetime(2024, 1, 22)],
+            "class": ["TP", "FP"],
+            "severity": [3, 1],
+            "replacement_type": ["bearing", "seal"],
+        }
+    )
+
+
+def test_build_records_label_columns(fake_data: Config):
+    events = build(_labels_with_numeric_extra(), fake_data)
+    assert isinstance(events, EventFrames)
+    assert events.label_cols == ("event_id", "asset_id", "class", "severity", "replacement_type")
+    first = next(iter(events))
+    assert events.subset([first]).label_cols == events.label_cols
+
+
+def test_numeric_label_column_is_not_a_feature(fake_data: Config):
+    events = build(_labels_with_numeric_extra(), fake_data)
+    df = to_period(events, fake_data, aggregators=["mean", "max"], feature_names=[])
+
+    assert not [c for c in df.columns if c.startswith("severity__")]
+    assert df["severity"].to_list() == [3, 1]
+    assert df["severity"].dtype.is_integer()
+    assert df["replacement_type"].to_list() == ["bearing", "seal"]
+    assert {"x__mean", "y__mean", "z__mean"} <= set(df.columns)
+
+
+def test_numeric_label_column_is_not_a_feature_windowed(fake_data: Config):
+    events = build(_labels_with_numeric_extra(), fake_data)
+    df = materialize(
+        events, WindowSpec.tumbling("1d"), fake_data, aggregators=["mean"], feature_names=[]
+    )
+    assert not [c for c in df.columns if c.startswith("severity__")]
+    assert set(df["severity"].to_list()) == {3, 1}
+    assert "x__mean" in df.columns
+
+
+def test_plain_dict_needs_explicit_label_cols(fake_data: Config):
+    """Hand-built {event_id: LazyFrame} dicts keep working; declare labels explicitly."""
+    events = build(_labels_with_numeric_extra(), fake_data)
+    plain = dict(events)
+
+    leaky = to_period(plain, fake_data, aggregators=["mean"], feature_names=[])
+    assert "severity__mean" in leaky.columns  # dtype heuristic alone cannot tell
+
+    df = to_period(
+        plain, fake_data, aggregators=["mean"], feature_names=[], label_cols=["severity"]
+    )
+    assert "severity__mean" not in df.columns
+    assert df["severity"].to_list() == [3, 1]
+
+
+def test_run_never_uses_label_columns_as_features(fake_data: Config):
+    events = build(_labels_with_numeric_extra(), fake_data)
+    df = to_period(events, fake_data, aggregators=["mean"], feature_names=[])
+
+    prep = prepare_xy(Run(df, target_col="class", cfg=fake_data, label_cols=events.label_cols).ctx)
+    assert "severity" not in prep.feature_cols
+    assert {"x__mean", "y__mean", "z__mean"} <= set(prep.feature_cols)
+
+    # Without the declaration a numeric label column would be read as a feature.
+    assert "severity" in prepare_xy(Run(df, target_col="class", cfg=fake_data).ctx).feature_cols
