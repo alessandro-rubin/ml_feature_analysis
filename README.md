@@ -28,13 +28,41 @@ caller supplies.
 
 ## Install
 
-```bash
-# with uv
-uv sync
+tessa is a library: analyses live in their **own project** (a folder or repo
+of notebooks) that installs tessa as a dependency, pinned to a release tag.
+Notebooks inside this repository are demos only.
 
-# or with pip
-pip install -e .[dev]
+**Start an analysis from the template** (recommended):
+
+```bash
+cp -r templates/analysis-project ~/analyses/my-analysis   # from a clone of this repo
+cd ~/analyses/my-analysis
+uv sync                  # .venv with tessa + Jupyter, pinned by uv.lock
+uv run jupyter lab       # or open notebooks/ in VS Code and pick .venv as kernel
 ```
+
+`notebooks/01_tp_vs_fp.ipynb` runs end to end on generated example data;
+fill in its settings cell (data root, label sheet, column names) to point it
+at yours. See `templates/analysis-project/README.md`.
+
+**Add tessa to an existing project:**
+
+```bash
+uv add "tessa[dashboard] @ git+ssh://git@github.com/alessandro-rubin/ml_feature_analysis@v0.3.0"
+uv add --editable ../ml_feature_analysis   # instead, to develop tessa alongside
+```
+
+uv resolves the `asset_loader` dependency from the same tag automatically (it
+is a workspace member of this repository). **Plain pip cannot**: it ignores
+`[tool.uv.sources]` and looks for `asset_loader` on PyPI, where it does not
+exist. With pip, install both explicitly:
+
+```bash
+pip install "asset_loader @ git+ssh://git@github.com/alessandro-rubin/ml_feature_analysis@v0.3.0#subdirectory=packages/asset_loader" \
+            "tessa @ git+ssh://git@github.com/alessandro-rubin/ml_feature_analysis@v0.3.0"
+```
+
+**Develop tessa itself:** clone the repository and run `uv sync --all-extras`.
 
 Optional extras: `boosting` (lightgbm, xgboost), `clustering` (hdbscan,
 umap-learn), `dashboard` (streamlit), `jupyter`, `dev` (pytest, ruff),
@@ -52,11 +80,13 @@ the analysis pipeline that depends on it.
 packages/asset_loader/
   src/asset_loader/
     config.py        # LoaderConfig (data root, filename pattern, timestamp col)
-    loader.py        # multi-source discovery + lazy loading (load_asset/load_event)
+    loader.py        # multi-source discovery + lazy loading (load_asset/load_event),
+                     # file_catalog (what exists, from file names alone)
 src/tessa/
   config.py          # Config dataclass (extends asset_loader.LoaderConfig)
   labels/            # LabelSource protocol + Excel implementation
-  dataset/           # per-event builder (loader re-exported from asset_loader)
+  dataset/           # per-event builder, Dataset facade, label/data availability
+                     # (loader re-exported from asset_loader)
   features/          # FeatureSpec / AggSpec registries + materializers
   analysis/          # supervised (importance, classifier, pairwise,
                      # distributions, stratified), separability,
@@ -66,9 +96,12 @@ src/tessa/
   io/                # writers for figures, tables, parquet outputs
   results/           # AnalysisResult, ResultStore, UI-independent figures,
                      # static HTML report
-  dashboard/         # streamlit run browser over a ResultStore
+  dashboard/         # streamlit run browser over a ResultStore (tessa-dashboard)
+  examples.py        # example data store + label sheet for tutorials
   ai/                # optional: LLM agent that can invent features
                      # (tools, expression sandbox, MCP server, CLI)
+templates/
+  analysis-project/  # starting point for an analysis that uses tessa
 ```
 
 One-line data access without the pipeline:
@@ -120,21 +153,33 @@ configuration, not new code paths.
 ## Quick start
 
 ```python
-import polars as pl
-from tessa import Config
-from tessa.labels.excel import ExcelLabelSource
-from tessa.dataset.builder import build
-from tessa.features.materialize import to_period
-from tessa.features import builtins  # registers stock features/aggregators
+from tessa import Config, Dataset
+from tessa.features import FeatureRegistry, to_period
+from tessa.features.builtins import make_first_difference
+from tessa.labels import ExcelLabelSource
 
 cfg = Config(data_root="data/")
+ds = Dataset(cfg)
 
-labels = ExcelLabelSource("labels.xlsx").load()
-events = build(labels, cfg=cfg)                  # dict[event_id -> LazyFrame]
-period = to_period(events, feature_specs=[...], agg_specs=[...])
+labels = ExcelLabelSource(
+    "labels.xlsx", column_map={"Asset": "asset_id", "Label": "class"}
+).load(cfg)
+labels = ds.available(labels)            # drop events the store has no data for
+events = ds.events(labels)               # dict[event_id -> LazyFrame], nothing read yet
+
+features = FeatureRegistry()
+make_first_difference("temperature", registry=features)
+period = to_period(events, cfg, aggregators=["mean", "std", "p95"], feature_registry=features)
 
 # period is one row per event, ready to feed analyses.
 ```
+
+Label sheets and data exports rarely match exactly. `ds.availability(labels)`
+(or `tessa.dataset.data_availability`) annotates every label row with the files
+found for its window, the fraction of the window they cover, and why an event
+cannot be loaded; `ds.available(labels)` keeps the loadable rows and warns
+about the rest. Both work from file names alone (`asset_loader.file_catalog`);
+`check="rows"` also scans the timestamp column to catch gaps inside files.
 
 ### Notebook-first API (`Run`)
 
@@ -162,7 +207,7 @@ changepoint, correlation, and relations still run.
 Browse a saved run with the dashboard:
 
 ```bash
-streamlit run src/tessa/dashboard/app.py -- outputs/runs
+tessa-dashboard outputs/runs        # needs the `dashboard` extra
 ```
 
 `demo.py` runs the whole pipeline end-to-end on synthetic data and writes
@@ -220,7 +265,7 @@ does, when to use it, and how to interpret the output.
 
 ## Status
 
-v0.2 (101 tests passing). The toolkit covers the full mission scope:
+v0.3. The toolkit covers the full mission scope:
 
 - **Foundation** — `Config`, per-event lazy loader + builder, pluggable
   label sources (Excel), feature/aggregator registries, per-sample /

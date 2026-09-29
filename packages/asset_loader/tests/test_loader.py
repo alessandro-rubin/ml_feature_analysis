@@ -9,6 +9,7 @@ from asset_loader import (
     LoadResult,
     discover_files,
     discover_sources,
+    file_catalog,
     load_asset,
     load_event,
 )
@@ -72,6 +73,20 @@ def test_discover_unbounded(fake_data: LoaderConfig):
     assert len(discover_files("A1", None, None, fake_data)) == 3
     assert len(discover_files("A1", datetime(2024, 2, 1), None, fake_data)) == 2
     assert len(discover_files("A1", None, datetime(2024, 1, 31), fake_data)) == 2
+
+
+def test_file_catalog(fake_data: LoaderConfig, tmp_path: Path):
+    cat = file_catalog(fake_data)
+    assert cat.columns == ["asset_id", "source", "path", "start", "end"]
+    assert cat["source"].to_list() == ["flow_rate", "sensor", "sensor"]
+    assert cat["end"].to_list() == [
+        datetime(2024, 2, 28),
+        datetime(2024, 1, 31),
+        datetime(2024, 2, 28),
+    ]
+    # A root path works like a default LoaderConfig; unknown assets are skipped.
+    assert file_catalog(tmp_path, ["A1", "nope"]).height == 3
+    assert file_catalog(tmp_path / "missing").is_empty()
 
 
 def test_load_event_joins_sources(fake_data: LoaderConfig):

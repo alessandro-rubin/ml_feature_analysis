@@ -2,7 +2,7 @@
 
 Run with::
 
-    streamlit run src/tessa/dashboard/app.py -- --root outputs/runs
+    tessa-dashboard outputs/runs
 
-Requires the ``dashboard`` extra: ``pip install ml-analysis[dashboard]``.
+Requires the ``dashboard`` extra: ``pip install 'tessa[dashboard]'``.
 """
