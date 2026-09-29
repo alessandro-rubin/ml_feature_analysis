@@ -6,6 +6,10 @@ never recomputes an analysis. All chart logic lives UI-independently in
 `Run.figures()`); this module only arranges the matplotlib figures it
 returns. Launch:
 
+    tessa-dashboard outputs/runs
+
+or, from a clone of the repository:
+
     streamlit run src/tessa/dashboard/app.py -- --root outputs/runs
 """
 
@@ -22,7 +26,7 @@ try:
     import streamlit as st
 except ImportError as err:  # pragma: no cover
     raise SystemExit(
-        "streamlit is required for the dashboard: pip install 'ml-analysis[dashboard]'"
+        "streamlit is required for the dashboard: pip install 'tessa[dashboard]'"
     ) from err
 
 from tessa.results import ResultStore

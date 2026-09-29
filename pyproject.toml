@@ -51,6 +51,7 @@ all = [
 [project.scripts]
 tessa-agent = "tessa.ai.cli:main"
 tessa-mcp = "tessa.ai.mcp_server:main"
+tessa-dashboard = "tessa.dashboard.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tessa"]
