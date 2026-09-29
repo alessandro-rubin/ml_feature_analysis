@@ -110,7 +110,12 @@ class AgentSession:
         if key not in self.runs:
             df = self.table(key)
             target = self.cfg.class_col if self.cfg.class_col in df.columns else None
-            self.runs[key] = Run(df, target_col=target, cfg=self.cfg)
+            self.runs[key] = Run(
+                df,
+                target_col=target,
+                cfg=self.cfg,
+                label_cols=getattr(self.events, "label_cols", ()),
+            )
         return self.runs[key]
 
     def invalidate_runs(self, name: str) -> None:

@@ -19,7 +19,7 @@ import polars as pl
 
 from tessa.config import Config
 from tessa.features.aggregates import AggregatorRegistry
-from tessa.features.materialize import to_period, to_windowed
+from tessa.features.materialize import _declared_label_cols, to_period, to_windowed
 from tessa.features.registry import FeatureRegistry
 
 
@@ -54,8 +54,15 @@ def materialize(
     feature_names: list[str] | None = None,
     feature_registry: FeatureRegistry | None = None,
     aggregator_registry: AggregatorRegistry | None = None,
+    label_cols: Iterable[str] | None = None,
 ) -> pl.DataFrame:
-    """Materialize event frames into the analysis table described by ``spec``."""
+    """Materialize event frames into the analysis table described by ``spec``.
+
+    ``label_cols`` (plus any recorded on an :class:`~tessa.dataset.EventFrames`
+    input) are carried through as label metadata and never aggregated; see
+    :func:`~tessa.features.materialize.to_period`.
+    """
+    label_cols = _declared_label_cols(lfs, label_cols)
     if spec.kind == "event":
         return to_period(
             lfs,
@@ -65,6 +72,7 @@ def materialize(
             feature_names=feature_names,
             feature_registry=feature_registry,
             aggregator_registry=aggregator_registry,
+            label_cols=label_cols,
         )
 
     if spec.every is None:
@@ -89,6 +97,7 @@ def materialize(
             feature_names=feature_names,
             feature_registry=feature_registry,
             aggregator_registry=aggregator_registry,
+            label_cols=label_cols,
         )
         for lf in items
     ]

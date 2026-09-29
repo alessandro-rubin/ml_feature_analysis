@@ -4,8 +4,9 @@ A *label table* is a :class:`polars.DataFrame` with one row per event and at
 least the columns ``asset_id``, ``start``, ``end``, ``class``. This module
 turns each row into an :class:`Event`, loads the corresponding raw
 time-series via :func:`asset_loader.load_event`, and attaches
-the label metadata as constant columns. The result is the
-``{event_id: LazyFrame}`` dict consumed by the materialisers in
+the label metadata as constant columns. The result is an :class:`EventFrames`
+mapping (a ``{event_id: LazyFrame}`` dict that also records which columns are
+label metadata) consumed by the materialisers in
 :mod:`tessa.features.materialize`.
 """
 
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable
+from typing import Iterable, Mapping
 
 import polars as pl
 
@@ -47,6 +48,11 @@ class Event:
     end: datetime
     label: dict  # class + any extras
 
+    @property
+    def label_cols(self) -> tuple[str, ...]:
+        """Columns :meth:`attach_to` adds: ``event_id``, ``asset_id`` and every label key."""
+        return ("event_id", "asset_id", *self.label)
+
     def attach_to(self, lf: pl.LazyFrame) -> pl.LazyFrame:
         """Add ``event_id``, ``asset_id`` and label columns to ``lf``.
 
@@ -64,6 +70,51 @@ class Event:
         for k, v in self.label.items():
             cols.append(pl.lit(v).alias(k))
         return lf.with_columns(cols)
+
+
+class EventFrames(dict[str, pl.LazyFrame]):
+    """``{event_id: LazyFrame}`` mapping that remembers its label columns.
+
+    A plain dict in every respect, plus :attr:`label_cols`: the columns that
+    came from the label table rather than from the sensor data. The
+    materialisers read it so that a *numeric* label column (a severity score,
+    an integer work-order ID) is carried through as label metadata instead of
+    being aggregated as a signal, which would leak the label into the features.
+
+    Parameters
+    ----------
+    frames : mapping, optional
+        Initial ``{event_id: LazyFrame}`` items.
+    label_cols : iterable of str, optional
+        Label/id column names attached to every frame.
+
+    Notes
+    -----
+    Only this class carries :attr:`label_cols`: a dict comprehension or
+    ``dict(events)`` returns a plain dict. To keep the information when
+    subsetting, use :meth:`subset`, or pass ``label_cols=events.label_cols``
+    to the materialiser explicitly.
+    """
+
+    def __init__(
+        self,
+        frames: Mapping[str, pl.LazyFrame] | None = None,
+        label_cols: Iterable[str] = (),
+    ) -> None:
+        super().__init__(frames or {})
+        self.label_cols: tuple[str, ...] = tuple(dict.fromkeys(label_cols))
+
+    def subset(self, event_ids: Iterable[str]) -> "EventFrames":
+        """Return the events in ``event_ids`` (in that order), keeping :attr:`label_cols`."""
+        return EventFrames({k: self[k] for k in event_ids}, self.label_cols)
+
+    def __repr__(self) -> str:
+        return f"EventFrames({len(self)} events, label_cols={list(self.label_cols)})"
+
+
+def _label_extras(labels: pl.DataFrame, cfg: Config) -> list[str]:
+    """Label-table columns that become :attr:`Event.label` keys."""
+    return [c for c in labels.columns if c not in {cfg.asset_col, "start", "end"}]
 
 
 def _event_id(asset_id: str, start: datetime, end: datetime, idx: int) -> str:
@@ -106,7 +157,7 @@ def iter_events(
     if missing:
         raise ValueError(f"Label table missing columns: {missing}")
 
-    extras_cols = [c for c in labels.columns if c not in {cfg.asset_col, "start", "end"}]
+    extras_cols = _label_extras(labels, cfg)
     for i, row in enumerate(labels.iter_rows(named=True)):
         yield Event(
             event_id=_event_id(row[cfg.asset_col], row["start"], row["end"], i),
@@ -127,7 +178,7 @@ def build(
     source_order: list[str] | None = None,
     asof_strategy: AsofStrategy = "backward",
     asof_tolerance: str | timedelta | None = None,
-) -> dict[str, pl.LazyFrame]:
+) -> EventFrames:
     """Build per-event LazyFrames with label metadata attached.
 
     Parameters
@@ -153,12 +204,14 @@ def build(
 
     Returns
     -------
-    dict[str, pl.LazyFrame]
+    EventFrames
         Mapping from ``event_id`` to a LazyFrame for that event, sorted
         by timestamp and decorated with constant ``event_id``,
-        ``asset_id``, and label columns.
+        ``asset_id``, and label columns. Its ``label_cols`` attribute
+        lists those columns, so the materialisers never aggregate them
+        as signals, whatever their dtype.
     """
-    out: dict[str, pl.LazyFrame] = {}
+    out = EventFrames(label_cols=["event_id", "asset_id", *_label_extras(labels, cfg)])
     for ev in iter_events(labels, cfg):
         lf = load_event(
             ev.asset_id,

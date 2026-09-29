@@ -29,7 +29,7 @@ from tessa.dataset.availability import (
     _filter_available,
     data_availability,
 )
-from tessa.dataset.builder import build
+from tessa.dataset.builder import EventFrames, build
 
 
 @dataclass
@@ -81,7 +81,7 @@ class Dataset:
         source_order: list[str] | None = None,
         asof_strategy: AsofStrategy = "backward",
         asof_tolerance: str | timedelta | None = None,
-    ) -> dict[str, pl.LazyFrame]:
+    ) -> EventFrames:
         """Per-event LazyFrames with label metadata attached.
 
         The keyword options are forwarded to :func:`asset_loader.load_event`

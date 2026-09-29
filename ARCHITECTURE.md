@@ -507,7 +507,10 @@ this plan calls for, which makes redesigning from scratch wasteful:
    unsupervised/semi-supervised column of the plan.
 3. **`_label_cols` dtype heuristic** (`features/materialize.py`) — replace
    with the explicit schema catalog of §3.1; "non-numeric ⇒ label" is the
-   audit's latent-bug class.
+   audit's latent-bug class. *Partly done:* `build()` now returns an
+   `EventFrames` recording its label columns, which the materialisers and
+   `Run(label_cols=...)` honour whatever their dtype; the dtype heuristic
+   remains only as the fallback for hand-built frames.
 4. **Audit correctness fixes** as specified: Hopkins power-1, seed injection
    from `cfg.random_state` (forests currently hardcode 42), rank-based
    importance blending, `PreparedXY` caching on the context, no bare

@@ -53,6 +53,7 @@ class Stratified:
                 label_filter=None,
                 stratify_by=None,
                 output_dir=ctx.output_dir,
+                label_cols=ctx.label_cols,
             )
             per_stratum[str(value)] = self.inner.run(sub_ctx)
 

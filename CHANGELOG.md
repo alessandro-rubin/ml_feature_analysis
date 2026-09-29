@@ -3,6 +3,34 @@
 ## Unreleased
 
 ### Fixed
+- **Numeric label-sheet columns no longer leak into the features.** Label
+  columns were told apart from signals by dtype, so a numeric extra column of
+  the label table (a severity score, an operator confidence, an integer
+  work-order ID) was aggregated like a sensor (`severity__mean`, ...) and fed
+  to the analyses. Being constant per event and often correlated with the
+  class, it could make `SeparabilityTest` / `FeatureImportance` look better
+  than the sensor data justifies. Label columns are now identified by where
+  they came from:
+  - `build()` / `Dataset.events()` return an `EventFrames`, a
+    `{event_id: LazyFrame}` dict whose `label_cols` lists the columns
+    attached from the label table (`event_id`, `asset_id`, the class and
+    every extra column). `EventFrames.subset(ids)` keeps it; a plain dict
+    comprehension does not. `Event.label_cols` gives the same per event.
+  - `to_period`, `to_windowed` and `materialize` read `label_cols` from an
+    `EventFrames` input, or take it explicitly as a new `label_cols`
+    argument (for frames built by hand). Those columns are excluded from
+    automatic source selection and carried through as first-value label
+    columns, keeping their dtype. The dtype heuristic (non-numeric columns
+    are labels) still applies on top, so plain dicts keep working as before.
+  - `Run(..., label_cols=...)` / `AnalysisContext.label_cols`: columns kept in
+    the table for filtering and stratifying but never used as features by
+    `prepare_xy`. Pass `label_cols=events.label_cols`; without it a numeric
+    label column carried through by `to_period` is still read as a feature.
+    `Stratified` passes it on to each stratum.
+  - The AI tools pass the session's label columns to `materialize`, to
+    `seed_builtin_features` source selection and to every `Run` they build.
+- The analysis template no longer casts the extra label columns to strings; it
+  passes `label_cols=events.label_cols` to `Run` instead.
 - **Per-sample features on multi-rate stores.** Sources are outer-joined on the
   timestamp, so a 5-minute signal next to a 1-minute one is null on 4 of every 5
   rows. `make_first_difference`, `make_rolling_mean`, `make_rolling_std`,
