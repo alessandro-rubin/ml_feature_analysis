@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-09-29
 
 ### Added
 - **Figures that lead with the finding.** Each analysis's plots now open with
