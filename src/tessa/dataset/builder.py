@@ -12,12 +12,12 @@ the label metadata as constant columns. The result is the
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
 import polars as pl
 
-from asset_loader import load_event
+from asset_loader import AsofStrategy, DuplicatePolicy, MergeStrategy, load_event
 
 from tessa.config import Config
 
@@ -121,6 +121,12 @@ def build(
     labels: pl.DataFrame,
     cfg: Config,
     columns: list[str] | None = None,
+    *,
+    merge: MergeStrategy = "outer",
+    on_duplicate: DuplicatePolicy = "error",
+    source_order: list[str] | None = None,
+    asof_strategy: AsofStrategy = "backward",
+    asof_tolerance: str | timedelta | None = None,
 ) -> dict[str, pl.LazyFrame]:
     """Build per-event LazyFrames with label metadata attached.
 
@@ -135,6 +141,15 @@ def build(
         Subset of raw columns to load from each event's parquet files.
         The timestamp column is always included. If ``None``, every
         column is loaded.
+    merge, on_duplicate, source_order, asof_strategy, asof_tolerance
+        Forwarded to :func:`asset_loader.load_event`; the defaults are the
+        loader's. The default ``merge="outer"`` keeps every source's own
+        timestamps, so a slower source is null between its samples; the
+        stock per-sample features in :mod:`tessa.features.builtins` skip
+        those nulls. Pass ``merge="asof"`` (with ``source_order`` naming the
+        fast source first, and usually an ``asof_tolerance`` about one slow
+        sampling period) to put slow sources onto the fast grid instead,
+        holding each value until the next sample.
 
     Returns
     -------
@@ -145,6 +160,17 @@ def build(
     """
     out: dict[str, pl.LazyFrame] = {}
     for ev in iter_events(labels, cfg):
-        lf = load_event(ev.asset_id, ev.start, ev.end, cfg, columns=columns)
+        lf = load_event(
+            ev.asset_id,
+            ev.start,
+            ev.end,
+            cfg,
+            columns=columns,
+            merge=merge,
+            on_duplicate=on_duplicate,
+            source_order=source_order,
+            asof_strategy=asof_strategy,
+            asof_tolerance=asof_tolerance,
+        )
         out[ev.event_id] = ev.attach_to(lf)
     return out
