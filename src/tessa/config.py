@@ -36,9 +36,9 @@ class Config(LoaderConfig):
     random_state : int, default ``42``
         Seed propagated to scikit-learn / numpy where applicable.
     assume_sorted : bool, default ``False``
-        If True, raw parquet files are trusted to be chronologically
-        ordered and readers mark the timestamp column with
-        ``set_sorted`` instead of paying an O(n log n) sort per event.
+        Reserved: meant to let readers trust chronologically ordered files
+        and skip the sort. Currently not applied, since every reader goes
+        through :func:`asset_loader.load_event`, which always sorts.
     extras : dict
         Free-form bag for project-specific settings consumed by user code.
     """
