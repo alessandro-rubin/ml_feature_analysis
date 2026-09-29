@@ -85,6 +85,30 @@
   share every marginal statistic by construction, so period aggregates provably
   cannot separate them and a derived feature can.
 
+- **Label/data availability** (`tessa.dataset.availability`). Label sheets name
+  assets that were never exported and periods outside the export, and `build`
+  raised on the first such event. `data_availability(labels, cfg)` annotates
+  every label row with the files overlapping its window, their sources, the
+  fraction of the window they cover, and why an event cannot be loaded;
+  `filter_available(labels, cfg, min_coverage=...)` keeps the loadable rows and
+  warns with the count dropped per reason. Both decide from file names by
+  default; `check="rows"` also scans the timestamp column, catching gaps inside
+  files. `Dataset.availability()` / `Dataset.available()` wrap them.
+- **`asset_loader.file_catalog(root, assets=None)`**: every parquet file the
+  loader can see, as a frame of `asset_id, source, path, start, end` parsed from
+  file names, without reading file contents.
+- **Analysis-project template** (`templates/analysis-project/`): a uv project
+  that pins tessa to a release tag, a `.gitignore` keeping data and outputs out
+  of git, and `notebooks/01_tp_vs_fp.ipynb`, which takes an Excel label sheet
+  and a parquet store to a separability verdict, feature ranking and HTML
+  report. Every placeholder is in one settings cell; as shipped it runs end to
+  end on generated data.
+- `tessa.examples.make_example_dataset`: a two-source, multi-rate store in
+  monthly files plus a label sheet with spreadsheet-style headers and rows the
+  store cannot serve, used by the template.
+- **`tessa-dashboard [root]`** entry point, so the dashboard runs from any
+  installed environment instead of a path into a clone.
+
 ### Changed
 - The `[ai]` extra now means the OpenAI-compatible drivers (Groq, OpenRouter,
   OpenAI, local) plus the MCP server — the paths needing no Anthropic key —
@@ -112,6 +136,17 @@
   `top_n=15`, which had left the volcano plot without its non-significant cloud.
 
 ### Fixed
+- **`Dataset.lazy(asset)` without a window failed on any asset with more than
+  one source** (it scanned every file in the folder as one schema), and
+  `Dataset.channels()` listed only the first file's columns. Both now go through
+  `load_event`, so a whole-asset frame is assembled exactly like an event.
+  `Config.assume_sorted` is therefore not applied anywhere at the moment, and is
+  documented as reserved.
+- README: the quick start called `ExcelLabelSource.load()` without its `cfg` and
+  `to_period` with arguments it does not take; the dashboard command passed the
+  results root positionally, which the app ignored; the install section
+  suggested `pip install -e .`, which cannot resolve `asset_loader`.
+- The dashboard's missing-dependency message named the old `ml-analysis` package.
 - **`permutation_null_plot` drew the null invisibly** when the observed value
   sat far from it: 40 narrow bars with white edges washed out to nothing, so
   the plot showed only the observed line. Bins now span the null alone, drawn as
