@@ -1,0 +1,14 @@
+# Environments
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Data never goes into git: point the notebooks at it instead.
+data/
+example_data/
+*.parquet
+*.xlsx
+
+# Generated results. Keep them out of git and share the HTML report instead;
+# remove this line if you do want run outputs versioned.
+outputs/

@@ -1,0 +1,29 @@
+# An analysis project that uses tessa as a library.
+# Copy this folder, rename the project, then run `uv sync` (see README.md).
+
+[project]
+name = "my-analysis" # TODO: rename
+version = "0.1.0"
+description = "TODO: one line on the question this analysis answers"
+requires-python = ">=3.11"
+dependencies = [
+    # Pinned to a release tag, so the notebooks keep producing the same results
+    # until you bump it on purpose. The `dashboard` extra adds `tessa-dashboard`.
+    # Over HTTPS instead of SSH: git+https://github.com/alessandro-rubin/ml_feature_analysis@v0.3.0
+    "tessa[dashboard] @ git+ssh://git@github.com/alessandro-rubin/ml_feature_analysis@v0.3.0",
+]
+
+[dependency-groups]
+# Installed by `uv sync` by default. ipykernel lets VS Code / PyCharm use the
+# project's .venv as a notebook kernel; jupyterlab is for `uv run jupyter lab`.
+dev = ["ipykernel>=6.29", "jupyterlab>=4.2"]
+
+[tool.uv]
+# A project of notebooks, not an installable package.
+package = false
+
+# To develop tessa and this analysis side by side, replace the dependency
+# above with an editable checkout (edits to tessa show up after a kernel
+# restart, or immediately with `%autoreload 2`):
+#
+#   uv add --editable ../ml_feature_analysis
