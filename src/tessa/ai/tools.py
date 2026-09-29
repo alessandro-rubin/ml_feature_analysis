@@ -399,6 +399,7 @@ def seed_builtin_features(
     if sources is None:
         schema = next(iter(events.values())).collect_schema()
         label_like = {"event_id", s.cfg.asset_col, s.cfg.class_col, s.cfg.timestamp_col}
+        label_like.update(getattr(events, "label_cols", ()))
         sources = [n for n in schema.names() if schema[n].is_numeric() and n not in label_like]
 
     added, skipped = [], []
@@ -716,6 +717,7 @@ def materialize(
 
     schema = next(iter(events.values())).collect_schema()
     label_like = {"event_id", s.cfg.asset_col, s.cfg.class_col}
+    label_like.update(getattr(events, "label_cols", ()))
     n_sources = (
         len(sources)
         if sources
@@ -1176,7 +1178,7 @@ def confirm_on_holdout(session_id: str, table: str | None = None) -> dict:
     )
     from tessa.run import Run
 
-    holdout_run = Run(df, target_col=s.cfg.class_col, cfg=s.cfg)
+    holdout_run = Run(df, target_col=s.cfg.class_col, cfg=s.cfg, label_cols=events.label_cols)
     try:
         holdout_run.run("separability")
     except Exception as exc:
