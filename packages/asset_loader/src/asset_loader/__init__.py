@@ -11,6 +11,7 @@ dropped (``on_duplicate``); ``with_metadata=True`` returns a
 
 from asset_loader.config import LoaderConfig
 from asset_loader.loader import (
+    CATALOG_SCHEMA,
     DUPLICATE_POLICIES,
     MERGE_STRATEGIES,
     AsofStrategy,
@@ -19,6 +20,7 @@ from asset_loader.loader import (
     MergeStrategy,
     discover_files,
     discover_sources,
+    file_catalog,
     load_asset,
     load_event,
 )
@@ -26,6 +28,7 @@ from asset_loader.loader import (
 __version__ = "0.2.0"
 
 __all__ = [
+    "CATALOG_SCHEMA",
     "DUPLICATE_POLICIES",
     "MERGE_STRATEGIES",
     "AsofStrategy",
@@ -35,6 +38,7 @@ __all__ = [
     "MergeStrategy",
     "discover_files",
     "discover_sources",
+    "file_catalog",
     "load_asset",
     "load_event",
 ]

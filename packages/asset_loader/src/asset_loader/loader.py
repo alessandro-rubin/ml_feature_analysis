@@ -39,7 +39,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, overload
+from typing import Any, Iterable, Literal, NamedTuple, overload
 
 import polars as pl
 
@@ -163,6 +163,69 @@ def discover_files(
     """
     groups = discover_sources(asset_id, start, end, cfg)
     return sorted(p for files in groups.values() for p in files)
+
+
+CATALOG_SCHEMA = pl.Schema(
+    {
+        "asset_id": pl.String,
+        "source": pl.String,
+        "path": pl.String,
+        "start": pl.Datetime("us"),
+        "end": pl.Datetime("us"),
+    }
+)
+"""Column layout of the frame returned by :func:`file_catalog`."""
+
+
+def file_catalog(
+    root: str | Path | LoaderConfig,
+    assets: Iterable[str] | None = None,
+) -> pl.DataFrame:
+    """List every parquet file the loader can see, with its parsed period.
+
+    Only file names are read, never file contents, so this is cheap even for
+    large stores. It is the inventory behind "which assets and periods have
+    data at all?" checks: join it against a table of requested windows
+    instead of calling :func:`discover_sources` once per window.
+
+    Parameters
+    ----------
+    root : str, Path, or LoaderConfig
+        Data-root directory (default layout) or a full :class:`LoaderConfig`.
+    assets : iterable of str, optional
+        Asset ids to inventory. ``None`` lists every folder under the data
+        root. Assets whose folder does not exist contribute no rows.
+
+    Returns
+    -------
+    pl.DataFrame
+        One row per parquet file matching ``filename_pattern``, sorted by
+        ``asset_id``, ``source``, ``start``, with the columns of
+        :data:`CATALOG_SCHEMA`: ``asset_id``, ``source``, ``path``, and the
+        ``start`` / ``end`` dates parsed from the filename. ``end`` is the
+        last *day* named in the filename; the file is taken to cover that
+        whole day, as in :func:`discover_sources`.
+    """
+    cfg = root if isinstance(root, LoaderConfig) else LoaderConfig(data_root=Path(root))
+    if assets is None:
+        data_root = cfg.data_root
+        assets = (
+            sorted(p.name for p in data_root.iterdir() if p.is_dir()) if data_root.is_dir() else []
+        )
+    pattern = re.compile(cfg.filename_pattern)
+    rows = []
+    for asset_id in dict.fromkeys(assets):  # de-duplicate, keep order
+        folder = cfg.asset_dir(asset_id)
+        if not folder.is_dir():
+            continue
+        for f in sorted(folder.glob("*.parquet")):
+            parsed = _parse_filename(f, pattern)
+            if parsed is not None:
+                source, f_start, f_end = parsed
+                rows.append((asset_id, source, str(f), f_start, f_end))
+    return pl.DataFrame(rows, schema=CATALOG_SCHEMA, orient="row").sort(
+        ["asset_id", "source", "start"]
+    )
 
 
 def _order_sources(available: list[str], source_order: list[str] | None) -> list[str]:
