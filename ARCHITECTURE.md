@@ -198,6 +198,9 @@ analysis *results* are persisted, via `ResultStore` (§6.1).
 `prepare_xy(table, policy=...)` is the single sklearn boundary:
 
 - Policies: `drop_rows`, `drop_features(max_null_frac=...)`, `impute(median)`.
+- Under every policy, feature columns null on every row are dropped first,
+  with a warning, so a single empty feature can never make `drop_rows`
+  discard every event.
 - Always returns a `PreparationReport`: rows in/out, features dropped and why,
   per-feature null fractions. Listwise deletion without a report is banned by
   construction (audit §2, `prepare_xy` row-drop issue).

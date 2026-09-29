@@ -31,6 +31,37 @@
     `seed_builtin_features` source selection and to every `Run` they build.
 - The analysis template no longer casts the extra label columns to strings; it
   passes `label_cols=events.label_cols` to `Run` instead.
+- **Per-sample features on multi-rate stores.** Sources are outer-joined on the
+  timestamp, so a 5-minute signal next to a 1-minute one is null on 4 of every 5
+  rows. `make_first_difference`, `make_rolling_mean`, `make_rolling_std`,
+  `make_zscore` and `make_constant_counter` evaluated row by row, so their output
+  (and every period aggregate of it) was null for every event. They now run on
+  the non-null samples of their source column (a window partitioned by the null
+  mask, exposed as `tessa.features.builtins.on_own_samples`) and stay null on
+  the rows the source was not sampled at. `diff1` is the step between the
+  signal's own consecutive samples, and `window` counts the signal's own samples:
+  `make_rolling_std("pressure", 10)` spans 50 minutes at a 5-minute rate.
+  Columns without nulls give the same values as before. A genuine gap inside a
+  single source is now skipped, not propagated through the window; for the
+  constant counter a gap neither breaks nor extends a run, and gap rows get a
+  null counter instead of 0.
+- **`prepare_xy` never empties the table because of one empty feature.** Under
+  every `NullPolicy`, feature columns that are null on every row are dropped
+  first, with a `UserWarning` naming them, and listed in
+  `PreparationReport.dropped_features`. Before, a single all-null column made the
+  default `drop_rows` policy discard every event.
+
+### Added
+- `tessa.dataset.builder.build` and `Dataset.events` accept the loader's
+  `merge`, `on_duplicate`, `source_order`, `asof_strategy` and `asof_tolerance`
+  options (keyword-only, same defaults as `asset_loader.load_event`), e.g.
+  `ds.events(labels, merge="asof", source_order=["sensor"], asof_tolerance="5m")`
+  to put slower sources onto the fast grid.
+
+### Changed
+- The template notebook no longer drops all-null feature columns by hand nor
+  switches to `NullPolicy("drop_features")`; with the fixes above the defaults
+  keep every event of the example data.
 
 ## 0.3.0 — 2026-09-29
 

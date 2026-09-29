@@ -17,11 +17,11 @@ Everything stays lazy until a materializer collects.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import polars as pl
 
-from asset_loader import discover_files, load_event
+from asset_loader import AsofStrategy, DuplicatePolicy, MergeStrategy, discover_files, load_event
 
 from tessa.config import Config
 from tessa.dataset.availability import (
@@ -71,9 +71,34 @@ class Dataset:
         """
         return load_event(asset_id, start, end, self.cfg, columns=columns)
 
-    def events(self, labels: pl.DataFrame, columns: list[str] | None = None) -> EventFrames:
-        """Per-event LazyFrames with label metadata attached (see builder)."""
-        return build(labels, self.cfg, columns=columns)
+    def events(
+        self,
+        labels: pl.DataFrame,
+        columns: list[str] | None = None,
+        *,
+        merge: MergeStrategy = "outer",
+        on_duplicate: DuplicatePolicy = "error",
+        source_order: list[str] | None = None,
+        asof_strategy: AsofStrategy = "backward",
+        asof_tolerance: str | timedelta | None = None,
+    ) -> EventFrames:
+        """Per-event LazyFrames with label metadata attached.
+
+        The keyword options are forwarded to :func:`asset_loader.load_event`
+        (see :func:`~tessa.dataset.builder.build`), e.g.
+        ``merge="asof", source_order=["sensor"], asof_tolerance="5m"`` to put
+        a slower source onto the ``sensor`` grid.
+        """
+        return build(
+            labels,
+            self.cfg,
+            columns=columns,
+            merge=merge,
+            on_duplicate=on_duplicate,
+            source_order=source_order,
+            asof_strategy=asof_strategy,
+            asof_tolerance=asof_tolerance,
+        )
 
     def availability(
         self, labels: pl.DataFrame, check: AvailabilityCheck = "files"

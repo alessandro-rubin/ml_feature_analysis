@@ -55,6 +55,10 @@ class NullPolicy:
       - ``"impute_median"`` — drop all-null features, fill remaining
         nulls with the per-feature median.
 
+    Under every kind, feature columns that are null on *every* row are
+    dropped first (with a :class:`UserWarning`): they carry no information,
+    and under ``"drop_rows"`` a single one would otherwise discard every row.
+
     Rows with a null *target* are always dropped (and counted).
     """
 
@@ -208,12 +212,29 @@ def prepare_xy(
     dropped_features: dict[str, float] = {}
     imputed_features: dict[str, float] = {}
 
+    # An all-null feature holds no information under any policy, and under
+    # "drop_rows" it would take every row with it: drop it first, loudly.
+    # (On an empty frame the null fraction is NaN, so nothing matches.)
+    all_null = {c: f for c, f in offenders.items() if f >= 1.0}
+    if all_null:
+        warnings.warn(
+            f"prepare_xy dropped {len(all_null)} feature column(s) that are null "
+            f"for every row: {', '.join(all_null)}. Per-sample features of a "
+            "slower source are a common cause; see tessa.features.builtins.",
+            stacklevel=2,
+        )
+        X = X.drop(columns=list(all_null))
+    dropped_features.update(all_null)
+
     if pol.kind == "drop_features":
-        dropped_features = {c: f for c, f in offenders.items() if f > pol.max_feature_null_frac}
-        X = X.drop(columns=list(dropped_features))
+        too_sparse = {
+            c: f
+            for c, f in offenders.items()
+            if c not in all_null and f > pol.max_feature_null_frac
+        }
+        X = X.drop(columns=list(too_sparse))
+        dropped_features.update(too_sparse)
     elif pol.kind == "impute_median":
-        dropped_features = {c: f for c, f in offenders.items() if f >= 1.0}
-        X = X.drop(columns=list(dropped_features))
         to_impute = {c: f for c, f in offenders.items() if c not in dropped_features}
         if to_impute:
             X = X.fillna(X.median(numeric_only=True))

@@ -119,10 +119,8 @@ def _df_with_nulls() -> pl.DataFrame:
 
 def test_drop_rows_policy_reports_and_warns():
     ctx = _ctx(_df_with_nulls())
-    with pytest.warns(UserWarning, match="dropped"):
+    with pytest.warns(UserWarning, match="dropped 10/40 rows"):
         prep = prepare_xy(ctx)
-    # f_all_null nulls every row under drop_rows -> everything would vanish;
-    # the report must say so loudly.
     rep = prep.report
     assert rep is not None
     assert rep.n_rows_in == 40
@@ -130,9 +128,23 @@ def test_drop_rows_policy_reports_and_warns():
     assert "f_all_null" in rep.feature_null_fracs
 
 
+def test_drop_rows_survives_an_all_null_feature():
+    # f_all_null is null on every row: applied row-wise, drop_rows would
+    # discard all 40 events. It must drop the column instead, and say so.
+    ctx = _ctx(_df_with_nulls())
+    with pytest.warns(UserWarning, match="null for every row: f_all_null"):
+        prep = prepare_xy(ctx)
+    assert "f_all_null" not in prep.feature_cols
+    assert prep.report.dropped_features == {"f_all_null": 1.0}
+    # only the 10 rows where f_noise is null are lost
+    assert prep.report.n_rows_out == 30
+    assert len(prep.y) == 30
+
+
 def test_drop_features_policy_keeps_rows():
     ctx = _ctx(_df_with_nulls(), null_policy=NullPolicy(kind="drop_features"))
-    prep = prepare_xy(ctx)
+    with pytest.warns(UserWarning, match="null for every row"):
+        prep = prepare_xy(ctx)
     assert "f_all_null" in prep.report.dropped_features
     assert "f_all_null" not in prep.feature_cols
     # only the 10 rows where f_noise is null are lost
@@ -141,7 +153,8 @@ def test_drop_features_policy_keeps_rows():
 
 def test_impute_policy_keeps_all_rows():
     ctx = _ctx(_df_with_nulls(), null_policy=NullPolicy(kind="impute_median"))
-    prep = prepare_xy(ctx)
+    with pytest.warns(UserWarning, match="null for every row"):
+        prep = prepare_xy(ctx)
     assert prep.report.n_rows_out == 40
     assert "f_noise" in prep.report.imputed_features
     assert "f_all_null" in prep.report.dropped_features

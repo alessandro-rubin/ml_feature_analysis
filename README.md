@@ -22,7 +22,10 @@ caller supplies.
   several data sets: files sharing a `dataname` prefix have identical columns
   and cover different periods (concatenated across time); different prefixes
   carry different variables, possibly at different sampling rates, and are
-  full-outer-joined on the timestamp at load time.
+  full-outer-joined on the timestamp at load time (pass `merge="asof"` to
+  `Dataset.events()` to put slower sources onto the fast grid instead). The
+  stock per-sample features (`diff1`, rolling mean / std, z-score) skip the
+  nulls this join leaves, so they run on each signal's own samples.
 - A label table with at least `(asset_id, start, end, class)` — the default
   source is an Excel sheet, but any `LabelSource` implementation works.
 
