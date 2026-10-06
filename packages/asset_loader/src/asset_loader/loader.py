@@ -332,6 +332,42 @@ def _resolve_duplicates(
     return renames, drops, coalesce_plan, duplicates
 
 
+def _asof_reach(
+    ts: str,
+    start: datetime | None,
+    end: datetime | None,
+    strategy: AsofStrategy,
+    tolerance: str | timedelta | None,
+) -> pl.Expr | None:
+    """Rows of a joined source that an anchor stamp in ``[start, end]`` can match.
+
+    A backward match lies at or before the anchor stamp and at most
+    ``tolerance`` earlier, so it falls in ``[start - tolerance, end]``; a
+    forward match in ``[start, end + tolerance]``; a nearest one in
+    ``[start - tolerance, end + tolerance]``. Without a tolerance the far side
+    is unbounded. Returns ``None`` when nothing can be excluded.
+    """
+
+    def widen(t: datetime, sign: int) -> pl.Expr | None:
+        if tolerance is None:
+            return None
+        if isinstance(tolerance, timedelta):
+            return pl.lit(t + sign * tolerance)
+        return pl.lit(t).dt.offset_by(("-" if sign < 0 else "") + tolerance)
+
+    lo = hi = None
+    if start is not None:
+        lo = pl.lit(start) if strategy == "forward" else widen(start, -1)
+    if end is not None:
+        hi = pl.lit(end) if strategy == "backward" else widen(end, +1)
+    conditions = []
+    if lo is not None:
+        conditions.append(pl.col(ts) >= lo)
+    if hi is not None:
+        conditions.append(pl.col(ts) <= hi)
+    return pl.all_horizontal(conditions) if conditions else None
+
+
 def _merge_frames(
     frames: list[pl.LazyFrame],
     ts: str,
@@ -658,6 +694,19 @@ def _load_event(
                     "reason": f"duplicate column, on_duplicate={on_duplicate!r}",
                 }
             )
+        if merge == "asof" and frames:
+            # Not the anchor: keep only rows an anchor stamp in the window can
+            # match, so the source is not read and sorted whole.
+            reach = _asof_reach(ts, start, end, asof_strategy, asof_tolerance)
+            if reach is not None:
+                lf = lf.filter(reach)
+                ops.append(
+                    {
+                        "op": "prefilter",
+                        "source": source,
+                        "reason": "asof merge: rows no anchor stamp in the window can match",
+                    }
+                )
         loaded = [mapping.get(c, c) for c in keep]
         src_meta[source]["columns_loaded"] = loaded
         for c in loaded:

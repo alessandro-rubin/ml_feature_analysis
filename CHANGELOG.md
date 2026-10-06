@@ -52,6 +52,11 @@
   default `drop_rows` policy discard every event.
 
 ### Added
+- `asset_loader` (`merge="asof"`): the joined sources are pre-filtered to the
+  rows an anchor timestamp in the window can match (window widened by
+  `asof_tolerance` on the matching side), so they are no longer read and sorted
+  whole for every event. Results are unchanged; the step is logged as
+  `prefilter` in the provenance.
 - `tessa.dataset.builder.build` and `Dataset.events` accept the loader's
   `merge`, `on_duplicate`, `source_order`, `asof_strategy` and `asof_tolerance`
   options (keyword-only, same defaults as `asset_loader.load_event`), e.g.

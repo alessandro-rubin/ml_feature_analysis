@@ -229,6 +229,33 @@ def test_merge_asof_tolerance_limits_the_match(fake_data: LoaderConfig):
     assert df["z"].null_count() == N_WIN_H - N_WIN_2H  # odd hours out of reach
 
 
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("tolerance", [None, "90m", timedelta(minutes=90)])
+def test_merge_asof_prefilter_keeps_every_match(fake_data: LoaderConfig, strategy, tolerance):
+    # Odd-hour bounds: the first and last anchor rows match 2-hourly stamps
+    # outside the window, which the joined source's pre-filter must keep.
+    start, end = datetime(2024, 1, 10, 1), datetime(2024, 1, 11, 23)
+    lf, meta = load_event(
+        "A1",
+        start,
+        end,
+        fake_data,
+        merge="asof",
+        source_order=["sensor"],
+        asof_strategy=strategy,
+        asof_tolerance=tolerance,
+        with_metadata=True,
+    )
+    sensor = load_event("A1", None, None, fake_data, columns=["x", "y"]).collect()
+    flow = load_event("A1", None, None, fake_data, columns=["z"]).collect()
+    expected = sensor.join_asof(
+        flow, on="timestamp", strategy=strategy, tolerance=tolerance
+    ).filter(pl.col("timestamp").is_between(start, end))
+    assert lf.collect().equals(expected)
+    prefiltered = any(op["op"] == "prefilter" for op in meta["operations"])
+    assert prefiltered == (strategy != "nearest" or tolerance is not None)
+
+
 def test_merge_vertical_stacks_rows(fake_data: LoaderConfig):
     df = load_event("A1", *WIN, fake_data, merge="vertical").collect()
     assert set(df.columns) == {"timestamp", "x", "y", "z"}
