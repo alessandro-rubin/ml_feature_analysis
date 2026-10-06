@@ -1,4 +1,4 @@
-"""A small, realistic-looking data store for tutorials and the analysis template.
+"""A small, realistic-looking synthetic data store for tutorials and tests.
 
 :func:`make_example_dataset` writes what a real project hands you:
 
@@ -18,12 +18,13 @@ separate well but not perfectly, mostly on the temperature dynamics.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 import polars as pl
+
+from tessa.examples._base import ExampleDataset
 
 __all__ = ["COLUMN_MAP", "ExampleDataset", "make_example_dataset"]
 
@@ -43,15 +44,6 @@ _MONTHS = [
     (datetime(2024, 2, 1), datetime(2024, 2, 29)),
 ]
 _EVENT = timedelta(hours=4)
-
-
-@dataclass(frozen=True)
-class ExampleDataset:
-    """Paths written by :func:`make_example_dataset`."""
-
-    data_root: Path
-    labels_path: Path
-    column_map: dict[str, str]
 
 
 def make_example_dataset(

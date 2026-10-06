@@ -67,6 +67,17 @@
   covers bars when every composite score is high.
 
 ### Added
+- **Real example data: `tessa.examples.fetch_wind_farm_a`.** Downloads Wind
+  Farm A of the CARE to Compare wind-turbine benchmark (5 turbines, 10-minute
+  SCADA data, 22 labelled fault run-ups and normal periods; CC BY-SA 4.0) from
+  Zenodo, about 160 MB read out of the 5.5 GB archive with HTTP range requests,
+  and writes it as a tessa store: monthly parquet files per turbine, an Excel
+  label sheet, and `signals.csv` describing every column. The per-event CSVs of
+  a turbine are merged into one timeline (refused if their overlaps disagree),
+  two datasets stamped one day late are realigned, and sensor columns get
+  readable names. `archive=` reads a local copy of the zip instead. The
+  synthetic generator moved to `tessa.examples.synthetic`;
+  `from tessa.examples import make_example_dataset` still works.
 - **Memory controls.** `Config.events_per_batch` (default: the polars thread
   pool size) caps how many events are read and reduced at once, and
   `Config.memory_budget` (default `"auto"`, half the physical memory; bytes or
@@ -93,6 +104,15 @@
 - The template notebook no longer drops all-null feature columns by hand nor
   switches to `NullPolicy("drop_features")`; with the fixes above the defaults
   keep every event of the example data.
+- **The analysis template runs on real data.** `notebooks/01_tp_vs_fp.ipynb` is
+  now `notebooks/01_anomaly_vs_normal.ipynb`: fault run-ups vs normal operation
+  on CARE to Compare Wind Farm A. Beyond the first verdict it shows the checks
+  that keep one honest: a column that leaks the label (`status_type_id`, derived
+  from the fault logbook), a seasonal confounder (ambient temperature alone
+  separates the classes almost as well as every signal), and a corrected
+  representation (component temperatures relative to ambient, via `@feature`),
+  after which the classes are no longer separable. Its settings cell gains
+  `NOT_SIGNALS`, `EVENTS_PER_BATCH` and `MEMORY_BUDGET`.
 
 ## 0.3.0 — 2026-09-29
 

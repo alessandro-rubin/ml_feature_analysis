@@ -44,9 +44,13 @@ uv sync                  # .venv with tessa + Jupyter, pinned by uv.lock
 uv run jupyter lab       # or open notebooks/ in VS Code and pick .venv as kernel
 ```
 
-`notebooks/01_tp_vs_fp.ipynb` runs end to end on generated example data;
-fill in its settings cell (data root, label sheet, column names) to point it
-at yours. See `templates/analysis-project/README.md`.
+`notebooks/01_anomaly_vs_normal.ipynb` runs end to end on real data: fault
+run-ups vs normal operation in wind-turbine SCADA data (Wind Farm A of the
+[CARE to Compare](https://doi.org/10.3390/data9120138) benchmark, downloaded
+from Zenodo on the first run). Besides the verdict it walks through the checks
+that keep one honest: a label leak, a seasonal confounder, a corrected
+representation. Fill in its settings cell (data root, label sheet, column
+names) to point it at yours. See `templates/analysis-project/README.md`.
 
 **Add tessa to an existing project:**
 
@@ -100,7 +104,8 @@ src/tessa/
   results/           # AnalysisResult, ResultStore, UI-independent figures,
                      # static HTML report
   dashboard/         # streamlit run browser over a ResultStore (tessa-dashboard)
-  examples.py        # example data store + label sheet for tutorials
+  examples/          # example stores + label sheets: real wind-turbine data
+                     # (fetch_wind_farm_a, CARE to Compare) and a synthetic one
   ai/                # optional: LLM agent that can invent features
                      # (tools, expression sandbox, MCP server, CLI)
 templates/
