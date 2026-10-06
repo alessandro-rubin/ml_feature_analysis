@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,18 +44,29 @@ class FeatureImportance:
         perm_mean = pd.Series(perm.importances_mean, index=prep.feature_cols, name="perm_mean")
         perm_std = pd.Series(perm.importances_std, index=prep.feature_cols, name="perm_std")
 
-        f_scores, f_pvals = f_classif(X, y)
-        anova = pd.DataFrame(
-            {"anova_f": f_scores, "anova_p": f_pvals},
-            index=prep.feature_cols,
-        )
+        # Constant features (common in real exports: a counter that never
+        # moves) get NaN statistics, which rank last below. Silence the
+        # warnings they raise; a feature constant *within* each class gets an
+        # infinite F, which ranks first, as it should.
+        with warnings.catch_warnings(), np.errstate(divide="ignore", invalid="ignore"):
+            warnings.filterwarnings("ignore", message="Features .* are constant")
+            f_scores, f_pvals = f_classif(X, y)
+            anova = pd.DataFrame(
+                {"anova_f": f_scores, "anova_p": f_pvals},
+                index=prep.feature_cols,
+            )
 
-        kw_rows = []
-        for col in prep.feature_cols:
-            groups = [X.loc[y == c, col].values for c in np.unique(y)]
-            stat, pval = kruskal(*groups)
-            kw_rows.append({"feature": col, "kw_stat": stat, "kw_p": pval})
-        kw = pd.DataFrame(kw_rows).set_index("feature")
+            kw_rows = []
+            for col in prep.feature_cols:
+                if X[col].nunique() <= 1:
+                    # All ties: scipy divides by a zero tie correction and
+                    # returns an infinite H, which would rank the feature first.
+                    stat, pval = np.nan, np.nan
+                else:
+                    groups = [X.loc[y == c, col].values for c in np.unique(y)]
+                    stat, pval = kruskal(*groups)
+                kw_rows.append({"feature": col, "kw_stat": stat, "kw_p": pval})
+            kw = pd.DataFrame(kw_rows).set_index("feature")
 
         mi = pd.Series(
             mutual_info_classif(X, y, random_state=ctx.cfg.random_state),

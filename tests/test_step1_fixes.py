@@ -83,6 +83,18 @@ def test_composite_is_rank_based_and_bounded():
     assert tbl.index[0] == "f_sep"
 
 
+def test_constant_feature_ranks_last_without_warnings():
+    df = _toy_df().with_columns(f_const=pl.lit(1.0))
+    importance = FeatureImportance(
+        permutation_repeats=2, rf_params={"n_estimators": 30, "n_jobs": 1}
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        tbl = importance.run(_ctx(df))["table"]
+    assert np.isnan(tbl.loc["f_const", "anova_f"]) and np.isnan(tbl.loc["f_const", "kw_stat"])
+    assert tbl.index[-1] == "f_const"
+
+
 # ── Hopkins in high dimension ───────────────────────────────────────────────
 
 

@@ -58,6 +58,11 @@
   added. Events are now collected in batches (`tessa.features.batching`), with
   identical results: the same benchmark peaks at 1.1 GB with 150 events and
   1.2 GB with 600, in about the same time.
+- `FeatureImportance`: a constant feature got an infinite Kruskal-Wallis
+  statistic (scipy divides by a zero tie correction), ranking it first on that
+  test and lifting its composite score. Constant features now get NaN, like the
+  ANOVA, and rank last; the warnings sklearn and scipy raise for them are
+  silenced.
 
 ### Added
 - **Memory controls.** `Config.events_per_batch` (default: the polars thread
