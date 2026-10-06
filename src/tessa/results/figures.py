@@ -273,7 +273,11 @@ def _b_importance(res: AnalysisResult) -> list[Figure]:
         return []
     if colors is not None:
         handles = [Patch(color=c, label=s) for s, c in palette.items()]
-        fig.axes[0].legend(handles=handles, title="signal", loc="lower right")
+        # Outside the axes: composite scores are often all high, so the bars
+        # reach the right edge and an inside legend would cover them.
+        fig.axes[0].legend(
+            handles=handles, title="signal", loc="upper left", bbox_to_anchor=(1.01, 1.0)
+        )
     return [fig]
 
 

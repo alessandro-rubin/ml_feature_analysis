@@ -63,6 +63,8 @@
   test and lifting its composite score. Constant features now get NaN, like the
   ANOVA, and rank last; the warnings sklearn and scipy raise for them are
   silenced.
+- The importance figure's signal legend sits outside the axes, so it no longer
+  covers bars when every composite score is high.
 
 ### Added
 - **Memory controls.** `Config.events_per_batch` (default: the polars thread
