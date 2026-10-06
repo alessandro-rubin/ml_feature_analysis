@@ -65,6 +65,7 @@ from __future__ import annotations
 import dataclasses
 import io
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -352,6 +353,29 @@ def _turbine(asset: int) -> str:
     return f"WT{asset:02d}"
 
 
+def _check_data_root(data_root: Path) -> None:
+    """Refuse a data root that already holds assets other than these turbines.
+
+    tessa treats every folder under the data root as an asset, so another
+    store's folders (an earlier example, real data) would mix with the
+    turbines and break whatever reads the store.
+    """
+    if not data_root.is_dir():
+        return
+    foreign = sorted(
+        p.name
+        for p in data_root.iterdir()
+        if p.is_dir() and not p.name.startswith(".") and not re.fullmatch(r"WT\d{2,}", p.name)
+    )
+    if foreign:
+        shown = ", ".join(foreign[:5]) + (", ..." if len(foreign) > 5 else "")
+        raise ValueError(
+            f"{data_root} already holds asset folders that are not Wind Farm A turbines "
+            f"({shown}); a Dataset on it would mix the two stores. Point "
+            "fetch_wind_farm_a at an empty folder of its own, or remove those folders."
+        )
+
+
 def _build_store(raw: Path, root: Path, ids: list[int], progress: bool) -> pl.DataFrame:
     """Write the per-turbine monthly files and the label sheet; return the signals table."""
     events = pl.read_csv(raw / "event_info.csv", separator=";", infer_schema_length=None)
@@ -428,8 +452,9 @@ def fetch_wind_farm_a(
     Parameters
     ----------
     root : str or Path
-        Target directory; ``data/``, ``labels.xlsx``, ``signals.csv`` and the
-        download cache ``raw/`` are created inside.
+        Target directory, used for this example only; ``data/``,
+        ``labels.xlsx``, ``signals.csv`` and the download cache ``raw/`` are
+        created inside.
     archive : str or Path, optional
         A local copy of ``CARE_To_Compare.zip`` to read instead of Zenodo,
         for machines without direct internet access.
@@ -453,10 +478,13 @@ def fetch_wind_farm_a(
     ConnectionError
         If Zenodo cannot be reached (pass ``archive=`` to work offline).
     ValueError
-        If the datasets of one turbine disagree where they overlap, which
-        would mean the archive differs from the version this was written for.
+        If ``<root>/data`` already holds folders other than the turbines (give
+        the example a folder of its own), or if the datasets of one turbine
+        disagree where they overlap, which would mean the archive differs from
+        the version this was written for.
     """
     root = Path(root)
+    _check_data_root(root / "data")
     marker = root / _MARKER
     out = ExampleDataset(
         data_root=root / "data",

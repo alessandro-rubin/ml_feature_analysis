@@ -138,6 +138,18 @@ def test_second_call_reuses_the_store(tmp_path: Path):
     assert rebuilt.signals.equals(first.signals)
 
 
+def test_refuses_a_data_root_shared_with_another_store(tmp_path: Path):
+    archive = _archive(tmp_path / "care.zip")
+    out = tmp_path / "out"
+    fetch_wind_farm_a(out, archive=archive, progress=False)
+    # An earlier example (or real data) written into the same folder, as the
+    # previous analysis template did: the turbines would mix with its assets.
+    (out / "data" / "A01").mkdir()
+    for kwargs in ({}, {"force": True}):  # a cached store is checked too
+        with pytest.raises(ValueError, match=r"not Wind Farm A turbines \(A01\)"):
+            fetch_wind_farm_a(out, archive=archive, progress=False, **kwargs)
+
+
 def test_disagreeing_overlaps_are_refused(tmp_path: Path):
     archive = _archive(tmp_path / "care.zip", disagree=True)
     with pytest.raises(ValueError, match=r"Turbine 0: the CARE datasets .* disagree"):

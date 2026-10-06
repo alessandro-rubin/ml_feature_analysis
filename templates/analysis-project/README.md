@@ -15,9 +15,9 @@ operation, and walks through the checks that keep the answer honest: a column
 that leaks the label, a seasonal confounder, and a corrected representation.
 
 The first run downloads about 160 MB from Zenodo (a minute or two) into
-`example_data/`; later runs reuse it. The data is licensed CC BY-SA 4.0 by its
-authors (Gück, Roelofs & Faulstich, *Data* 9(12):138, 2024): cite the paper if
-you publish results obtained from it. Offline, download `CARE_To_Compare.zip`
+`example_data/wind_farm_a/`; later runs reuse it. The data is licensed CC BY-SA
+4.0 by its authors (Gück, Roelofs & Faulstich, *Data* 9(12):138, 2024): cite
+the paper if you publish results obtained from it. Offline, download `CARE_To_Compare.zip`
 from <https://zenodo.org/records/15846963> (the version tessa reads) and pass
 its path as `fetch_wind_farm_a(..., archive=...)`.
 
@@ -42,7 +42,7 @@ notebooks later gets the same environment.
 ```
 notebooks/     analysis notebooks, numbered in reading order
 outputs/       saved runs and HTML reports (git-ignored)
-example_data/  downloaded by the notebook when USE_EXAMPLE_DATA=True (git-ignored)
+example_data/  wind_farm_a/, downloaded when USE_EXAMPLE_DATA=True (git-ignored)
 ```
 
 Raw data and label sheets stay where they are (a shared drive, a data folder
