@@ -39,6 +39,19 @@ class Config(LoaderConfig):
         Reserved: meant to let readers trust chronologically ordered files
         and skip the sort. Currently not applied, since every reader goes
         through :func:`asset_loader.load_event`, which always sorts.
+    events_per_batch : int, optional
+        Most events the materialisers read and reduce at the same time.
+        Events are collected batch by batch, so peak memory follows the
+        batch, not the number of events. ``None`` (default) uses the size
+        of the polars thread pool, which keeps every core busy.
+    memory_budget : int, str, or None, default ``"auto"``
+        Cap on the estimated working set of one batch, in bytes or as a
+        string such as ``"8GB"`` or ``"512MB"``. Large events (long windows,
+        high sampling rates, many derived features) then run fewer at a
+        time, and an event estimated above the budget runs on its own, with
+        a warning. ``"auto"`` is half the machine's physical memory;
+        ``None`` disables the cap. See :mod:`tessa.features.batching` for
+        how events are sized.
     extras : dict
         Free-form bag for project-specific settings consumed by user code.
     """
@@ -48,4 +61,6 @@ class Config(LoaderConfig):
     output_dir: Path = Path("outputs")
     random_state: int = 42
     assume_sorted: bool = False
+    events_per_batch: int | None = None
+    memory_budget: int | str | None = "auto"
     extras: dict = field(default_factory=dict)

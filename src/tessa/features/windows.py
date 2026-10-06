@@ -8,6 +8,8 @@ A `WindowSpec` answers "what is one row of the analysis table":
 
 `materialize(lfs, spec, cfg, ...)` dispatches to the right materializer
 and always returns an eager DataFrame — the boundary where laziness ends.
+Events are collected in memory-bounded batches (see
+:mod:`tessa.features.batching`).
 """
 
 from __future__ import annotations
@@ -19,7 +21,14 @@ import polars as pl
 
 from tessa.config import Config
 from tessa.features.aggregates import AggregatorRegistry
-from tessa.features.materialize import _declared_label_cols, to_period, to_windowed
+from tessa.features.batching import collect_batched, memory_budget_bytes
+from tessa.features.materialize import (
+    _declared_label_cols,
+    _event_sizes,
+    to_per_sample,
+    to_period,
+    to_windowed,
+)
 from tessa.features.registry import FeatureRegistry
 
 
@@ -86,6 +95,14 @@ def materialize(
     if not items:
         return pl.DataFrame()
 
+    sizes = None
+    if memory_budget_bytes(cfg.memory_budget) is not None:
+        if sources is not None:
+            n_columns = len(sources) + 1
+        else:  # numeric columns of the per-sample frame
+            schema = to_per_sample(items[0], cfg, feature_names, feature_registry).collect_schema()
+            n_columns = sum(1 for dtype in schema.dtypes() if dtype.is_numeric()) + 1
+        sizes = _event_sizes(lfs, cfg, n_columns)
     lazy_parts = [
         to_windowed(
             lf,
@@ -101,4 +118,11 @@ def materialize(
         )
         for lf in items
     ]
-    return pl.concat(pl.collect_all(lazy_parts), how="vertical_relaxed")
+    parts = collect_batched(
+        lazy_parts,
+        cfg,
+        sizes=sizes,
+        names=list(lfs) if isinstance(lfs, dict) else None,
+        stacklevel=2,
+    )
+    return pl.concat(parts, how="vertical_relaxed")

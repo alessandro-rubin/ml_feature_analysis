@@ -27,6 +27,7 @@ import polars as pl
 from asset_loader import CATALOG_SCHEMA, file_catalog
 
 from tessa.config import Config
+from tessa.features.batching import collect_batched
 
 AvailabilityCheck = Literal["files", "rows"]
 """``"files"``: a file's name-encoded period overlaps the window.
@@ -261,7 +262,8 @@ def _scan_rows(overlap: pl.DataFrame, events: pl.DataFrame, cfg: Config) -> pl.D
     """Count the rows inside each window by scanning the timestamp column.
 
     Sources are scanned separately (their files share a schema, sources do
-    not) and the per-event queries run together via ``pl.collect_all``.
+    not) and the per-event queries are collected in batches of
+    ``cfg.events_per_batch`` (see :mod:`tessa.features.batching`).
     Parquet statistics let polars skip row groups outside the window.
     """
     ts = cfg.timestamp_col
@@ -295,5 +297,6 @@ def _scan_rows(overlap: pl.DataFrame, events: pl.DataFrame, cfg: Config) -> pl.D
     }
     if not queries:
         return pl.DataFrame(schema=schema)
-    found = pl.concat(pl.collect_all(queries), how="vertical_relaxed")
+    # Only timestamps are read: batching by count is enough, no sizing needed.
+    found = pl.concat(collect_batched(queries, cfg), how="vertical_relaxed")
     return found.with_columns(pl.Series(_ROW, rows, dtype=pl.UInt32)).cast(schema)

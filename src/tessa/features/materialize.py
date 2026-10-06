@@ -24,6 +24,7 @@ from tessa.features.aggregates import (
     AggregatorRegistry,
     default_registry as default_aggs,
 )
+from tessa.features.batching import collect_batched, estimate_event_bytes, memory_budget_bytes
 from tessa.features.registry import (
     FeatureRegistry,
     default_registry as default_features,
@@ -69,6 +70,16 @@ def _declared_label_cols(lfs: object, label_cols: Iterable[str] | None) -> tuple
     """
     recorded = getattr(lfs, "label_cols", None) or ()
     return tuple(dict.fromkeys([*recorded, *(label_cols or ())]))
+
+
+def _event_sizes(lfs: object, cfg: Config, n_columns: int) -> list[float] | None:
+    """Estimated bytes per event, or ``None`` without a memory budget or windows.
+
+    Sizing reads parquet footers, so it is skipped when no budget applies.
+    """
+    if memory_budget_bytes(cfg.memory_budget) is None or not isinstance(lfs, dict):
+        return None
+    return estimate_event_bytes(lfs, cfg, n_columns)
 
 
 def _resolve_features(
@@ -244,13 +255,15 @@ def to_period(
 
     All per-event aggregations are built lazily (feature expressions are
     applied inside each event, so rolling/diff features never bleed across
-    events), the schema is resolved **once** for the whole batch, and the
-    events are collected together via ``pl.collect_all`` — Polars runs
-    them in parallel on its thread pool instead of the old sequential
-    per-event ``collect()`` loop, which was single-core-bound.
+    events), and the schema is resolved **once** for all events. The events
+    are then collected in batches via ``pl.collect_all``: polars works on a
+    batch in parallel on its thread pool, while memory stays bounded by the
+    batch whatever the number of events. ``cfg.events_per_batch`` caps the
+    events per batch and ``cfg.memory_budget`` their estimated working set
+    (see :mod:`tessa.features.batching`).
     (A single fused ``concat -> group_by`` query was benchmarked too: its
     plan-optimization cost grows superlinearly with the number of events
-    and loses badly past ~1k events, so ``collect_all`` is the lever used.)
+    and loses badly past ~1k events.)
 
     Parameters
     ----------
@@ -262,7 +275,8 @@ def to_period(
         are honoured).
     cfg : Config
         Project configuration; ``cfg.timestamp_col`` is excluded from
-        automatic source selection.
+        automatic source selection, and ``cfg.events_per_batch`` /
+        ``cfg.memory_budget`` bound how many events are read at once.
     sources : list of str, optional
         Columns to aggregate. Defaults to all numeric columns that aren't
         the timestamp or a label column, after feature materialisation.
@@ -292,6 +306,12 @@ def to_period(
         ``"<source>__<aggregator>"`` plus the label columns, each holding
         its first value within the event.
         Returns an empty :class:`pl.DataFrame` if ``lfs`` is empty.
+
+    Warns
+    -----
+    UserWarning
+        If an event is estimated to need more than ``cfg.memory_budget`` on
+        its own (it is then collected alone).
     """
     fr = feature_registry or default_features()
     ar = aggregator_registry or default_aggs()
@@ -323,4 +343,11 @@ def to_period(
     label_exprs = [pl.col(c).first().alias(c) for c in label_names]
 
     lazy_rows = [base.select(label_exprs + agg_exprs) for base in bases]
-    return pl.concat(pl.collect_all(lazy_rows), how="vertical_relaxed")
+    rows = collect_batched(
+        lazy_rows,
+        cfg,
+        sizes=_event_sizes(lfs, cfg, n_columns=len(srcs) + 1),
+        names=list(lfs) if isinstance(lfs, dict) else None,
+        stacklevel=2,
+    )
+    return pl.concat(rows, how="vertical_relaxed")

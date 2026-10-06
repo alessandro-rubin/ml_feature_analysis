@@ -193,6 +193,16 @@ LazyFrames and a `Config` (not `ds` + `feature_set` + `events`). The feature
 store (parquet cache of materialized features) was **not** built — only
 analysis *results* are persisted, via `ResultStore` (§6.1).
 
+*Memory, as shipped:* one query per event, collected in batches rather than
+"once" (`features/batching.py`). A single `pl.collect_all` over every event
+let polars hold many events' per-sample frames together, so peak memory grew
+with the event count (3.6 GB for 600 one-hertz events on a benchmark, 1.2 GB in
+batches). A batch is bounded by `Config.events_per_batch` (default: thread
+pool size) and by `Config.memory_budget` against each event's estimated
+working set, computed before any read from file names and parquet footers. The
+streaming engine was measured too and did not lower an event's peak: rolling
+and `.over()` features fall back to in-memory execution.
+
 ### 4.3 Null & quality policy (explicit, reported)
 
 `prepare_xy(table, policy=...)` is the single sklearn boundary:

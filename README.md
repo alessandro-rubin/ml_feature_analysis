@@ -184,6 +184,29 @@ cannot be loaded; `ds.available(labels)` keeps the loadable rows and warns
 about the rest. Both work from file names alone (`asset_loader.file_catalog`);
 `check="rows"` also scans the timestamp column to catch gaps inside files.
 
+### Large stores: memory
+
+The materialisers (`to_period`, `materialize`) read and reduce events in
+batches, so peak memory follows the batch, not the number of events: hundreds
+of assets need not fit in memory together. Two `Config` settings bound a batch:
+
+```python
+cfg = Config(
+    data_root="data/",
+    events_per_batch=8,      # events at once; default: the polars thread pool size
+    memory_budget="8GB",     # estimated working set per batch; default "auto"
+)                            # (half the physical memory), None for no cap
+```
+
+Before reading anything, each event is sized from file names and parquet
+footers: rows in its window x numeric columns reduced (signals plus derived
+features) x 32 bytes, the measured working set of loading, joining, sorting and
+window features. Long windows, high sampling rates or many derived features
+therefore mean fewer events per batch; an event above the budget on its own is
+collected alone, with a warning. Reading only the analysed signals
+(`ds.events(labels, columns=[...])`) shrinks every event further. See
+`tessa.features.batching`.
+
 ### Notebook-first API (`Run`)
 
 `Run` is the primary interface: one object from analysis table to saved
@@ -272,7 +295,7 @@ v0.3. The toolkit covers the full mission scope:
 
 - **Foundation** — `Config`, per-event lazy loader + builder, pluggable
   label sources (Excel), feature/aggregator registries, per-sample /
-  windowed / period materializers (parallel `collect_all`), pluggable
+  windowed / period materializers (parallel, memory-bounded batches), pluggable
   analysis module with a DAG runner.
 - **Supervised** — importance (rank-blended), distributions, pairwise,
   classifier / cross-validated classifier (grouped CV), importance

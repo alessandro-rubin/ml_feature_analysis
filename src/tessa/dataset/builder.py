@@ -72,6 +72,10 @@ class Event:
         return lf.with_columns(cols)
 
 
+EventWindow = tuple[str, datetime | None, datetime | None]
+"""``(asset_id, start, end)`` of one event, as recorded by :func:`build`."""
+
+
 class EventFrames(dict[str, pl.LazyFrame]):
     """``{event_id: LazyFrame}`` mapping that remembers its label columns.
 
@@ -81,32 +85,46 @@ class EventFrames(dict[str, pl.LazyFrame]):
     an integer work-order ID) is carried through as label metadata instead of
     being aggregated as a signal, which would leak the label into the features.
 
+    It also records :attr:`windows`, each event's ``(asset_id, start, end)``,
+    from which the materialisers estimate how much memory an event needs
+    before reading it (see :mod:`tessa.features.batching`).
+
     Parameters
     ----------
     frames : mapping, optional
         Initial ``{event_id: LazyFrame}`` items.
     label_cols : iterable of str, optional
         Label/id column names attached to every frame.
+    windows : mapping, optional
+        ``{event_id: (asset_id, start, end)}`` for the events in ``frames``.
 
     Notes
     -----
-    Only this class carries :attr:`label_cols`: a dict comprehension or
-    ``dict(events)`` returns a plain dict. To keep the information when
+    Only this class carries :attr:`label_cols` and :attr:`windows`: a dict
+    comprehension or ``dict(events)`` returns a plain dict. To keep them when
     subsetting, use :meth:`subset`, or pass ``label_cols=events.label_cols``
-    to the materialiser explicitly.
+    to the materialiser explicitly (without windows, events are batched by
+    count only).
     """
 
     def __init__(
         self,
         frames: Mapping[str, pl.LazyFrame] | None = None,
         label_cols: Iterable[str] = (),
+        windows: Mapping[str, EventWindow] | None = None,
     ) -> None:
         super().__init__(frames or {})
         self.label_cols: tuple[str, ...] = tuple(dict.fromkeys(label_cols))
+        self.windows: dict[str, EventWindow] = dict(windows or {})
 
     def subset(self, event_ids: Iterable[str]) -> "EventFrames":
-        """Return the events in ``event_ids`` (in that order), keeping :attr:`label_cols`."""
-        return EventFrames({k: self[k] for k in event_ids}, self.label_cols)
+        """Return the events in ``event_ids`` (in that order), keeping the metadata."""
+        ids = list(event_ids)
+        return EventFrames(
+            {k: self[k] for k in ids},
+            self.label_cols,
+            {k: self.windows[k] for k in ids if k in self.windows},
+        )
 
     def __repr__(self) -> str:
         return f"EventFrames({len(self)} events, label_cols={list(self.label_cols)})"
@@ -209,7 +227,8 @@ def build(
         by timestamp and decorated with constant ``event_id``,
         ``asset_id``, and label columns. Its ``label_cols`` attribute
         lists those columns, so the materialisers never aggregate them
-        as signals, whatever their dtype.
+        as signals, whatever their dtype; its ``windows`` attribute
+        records each event's ``(asset_id, start, end)``.
     """
     out = EventFrames(label_cols=["event_id", "asset_id", *_label_extras(labels, cfg)])
     for ev in iter_events(labels, cfg):
@@ -226,4 +245,5 @@ def build(
             asof_tolerance=asof_tolerance,
         )
         out[ev.event_id] = ev.attach_to(lf)
+        out.windows[ev.event_id] = (ev.asset_id, ev.start, ev.end)
     return out

@@ -50,8 +50,27 @@
   first, with a `UserWarning` naming them, and listed in
   `PreparationReport.dropped_features`. Before, a single all-null column made the
   default `drop_rows` policy discard every event.
+- **Memory no longer grows with the number of events.** `to_period`, windowed
+  `materialize` and the `check="rows"` availability scan handed every event's
+  query to one `pl.collect_all`, which let polars hold many events' per-sample
+  frames at once: on a benchmark of 600 events (12 h at 1 Hz, 16 signals, 48
+  derived features) peak memory reached 3.6 GB and kept rising with each event
+  added. Events are now collected in batches (`tessa.features.batching`), with
+  identical results: the same benchmark peaks at 1.1 GB with 150 events and
+  1.2 GB with 600, in about the same time.
 
 ### Added
+- **Memory controls.** `Config.events_per_batch` (default: the polars thread
+  pool size) caps how many events are read and reduced at once, and
+  `Config.memory_budget` (default `"auto"`, half the physical memory; bytes or
+  `"8GB"`; `None` for no cap) caps a batch's estimated working set. Events are
+  sized from file names and parquet footers before anything is read (rows in
+  the window x columns reduced x 32 bytes); an event above the budget on its own
+  runs alone, with a warning. `tessa.features.batching` exposes the sizing
+  (`estimate_event_rows`, `estimate_event_bytes`) and planning
+  (`plan_batches`, `collect_batched`) helpers.
+- `EventFrames.windows`: each event's `(asset_id, start, end)`, recorded by
+  `build()` / `Dataset.events()` and kept by `subset()`.
 - `asset_loader` (`merge="asof"`): the joined sources are pre-filtered to the
   rows an anchor timestamp in the window can match (window widened by
   `asof_tolerance` on the matching side), so they are no longer read and sorted
