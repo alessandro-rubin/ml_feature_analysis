@@ -10,13 +10,14 @@ them straight from Python with no model at all.
 
 ---
 
-## Three ways to drive it
+## Ways to drive it
 
 | Route | Model | Needs |
 |---|---|---|
 | **MCP client** (Claude Desktop, Claude Code, Cline, Zed, …) | whatever the client uses | no API key of your own |
 | **`tessa-agent --provider groq`** (default) | open-weight, via Groq | `GROQ_API_KEY` |
 | **`tessa-agent --provider openrouter`** | any frontier model, Claude included | `OPENROUTER_API_KEY` |
+| **`tessa-agent --provider openai`** | OpenAI models | `OPENAI_API_KEY` |
 | **`tessa-agent --provider anthropic`** | Claude | `ANTHROPIC_API_KEY` |
 | **`tessa-agent --provider ollama`** (or `lmstudio`, `llamacpp`, `vllm`) | open-weight, on your own machine | a local server; see [Running with a local model](#running-with-a-local-model) |
 | **`tessa-agent --offline`** | none | nothing |
@@ -103,7 +104,8 @@ Memory figures are rough: weights at Ollama's default 4-bit quantization plus th
 KV cache for a 32k-token window. Newer families with tool calling, such as Qwen
 3.5 and Gemma 4, are worth trying; check their sizes in the
 [Ollama library's Tools filter](https://ollama.com/search?c=tools) and pass the
-tag with `--model`. Any model without tool calling is refused before the run.
+tag with `--model`. On Ollama a model without tool calling is refused before the
+run; on LM Studio the check warns about one.
 
 **The context window is the setting that matters most.** The system prompt and
 tool definitions alone take about 8k tokens, and every tool result adds to them.
@@ -223,22 +225,25 @@ server was started with `--api-key`, export the same key as `VLLM_API_KEY`.
 
 - **It checks the server before the first turn** (`tessa.ai.local.probe`): that
   it answers, that it has the model (with the command to get it), that the
-  model can call tools (Ollama), that the context window holds the prompt, and
-  whether the model spills onto the CPU (Ollama). It also warns when an Ollama
-  model is a cloud model, whose prompts do leave the machine. `--skip-check`
-  turns the check off.
+  model can call tools (Ollama refuses one that cannot; LM Studio warns), that
+  the context window leaves room for tool results after the prompt and a reply,
+  that the model is already loaded (LM Studio), and whether it spills onto the
+  CPU (Ollama). It also warns when an Ollama model is a cloud model, whose
+  prompts do leave the machine. `--skip-check` turns the check off.
 - **It keeps the conversation inside the window.** It reads the window from the
   server (Ollama, llama.cpp, vLLM, and LM Studio for a loaded model), or takes
   it from `--context-length`. Before a request would overflow, the oldest tool
   results are replaced by a short note telling the model to call the tool again
   if it needs the result; each new result is capped at half the room
   available, and a reply at a quarter of the window. `--context-length` turns
-  this on for any provider.
+  this on for any provider, but leave it off for Claude: its 1M-token window
+  does not need it, and newer Claude models (Opus 5.5, Sonnet 5.5, Haiku 5.5,
+  Fable 5.1) treat an edited earlier turn as invalid history.
 - **It recovers tool calls a server left in the text.** When the server does not
-  parse a model's call format, the call arrives as text, `<tool_call>{...}`
-  or a bare JSON object, and the run would end on its first turn. Such calls are
-  run anyway, with a warning, because they mean the server's tool-calling setup
-  needs fixing.
+  parse a model's call format, the call arrives as text (`<tool_call>{...}`,
+  LM Studio's `[TOOL_REQUEST]{...}[END_TOOL_REQUEST]`, or a bare JSON object)
+  and the run would end on its first turn. Such calls are run anyway, with a
+  warning, because they mean the server's tool-calling setup needs fixing.
 - **It samples at temperature 0.6** instead of 0: greedy decoding sends small
   models into repetition loops, and Ollama substitutes 1.0 when no temperature is
   sent. `--temperature` overrides it.
@@ -488,9 +493,9 @@ version of this layer hand-wrote Anthropic schemas, re-serialized them for the
 OpenAI path, and duplicated the loop — and the copies drifted apart.
 
 Local servers need no backend of their own: they speak the OpenAI protocol, so a
-local preset is a base URL plus two switches on the OpenAI-compatible backend
-(text tool-call recovery, a non-zero temperature). What differs between servers
-is checked before the run, by `local.py`.
+local preset is a base URL plus three switches on the OpenAI-compatible backend
+(text tool-call recovery, a non-zero temperature, sending reasoning back). What
+differs between servers is checked before the run, by `local.py`.
 
 | Module | Role |
 |---|---|
@@ -518,7 +523,8 @@ is checked before the run, by `local.py`.
 - All tool results from one assistant turn are returned together; splitting them
   teaches a model to stop making parallel calls.
 - Arguments are always parsed as JSON, never string-matched.
-- Payloads are truncated to 20 KB before entering context.
+- Payloads are truncated to 20 KB before entering context, or to half the room
+  left in the context window when one is set.
 - Given a context window (`context_tokens`), the reasoning kept in older
   assistant turns is dropped and then the oldest tool results are replaced by a
   short note before a request would overflow it, down to 60% of the budget so
@@ -537,8 +543,8 @@ Everything above is tested with no credentials and no network — the sandbox
 against real escape attempts, session isolation, the tool surface end to end on
 synthetic data, schema derivation, both backend adapters against fake clients,
 the loop against a stub backend, and the local-server path (preflight checks,
-CLI runs through the real OpenAI SDK) against a fake server on 127.0.0.1 that
-answers like Ollama, LM Studio, llama.cpp or vLLM.
+CLI runs through the real OpenAI SDK, the reasoning round trip) against a fake
+server on 127.0.0.1 that answers like Ollama, LM Studio, llama.cpp or vLLM.
 
 ```bash
 uv run pytest -q                    # `live` tests are deselected by default

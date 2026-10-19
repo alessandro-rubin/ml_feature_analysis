@@ -102,7 +102,8 @@ src/tessa/
   dashboard/         # streamlit run browser over a ResultStore (tessa-dashboard)
   examples.py        # example data store + label sheet for tutorials
   ai/                # optional: LLM agent that can invent features
-                     # (tools, expression sandbox, MCP server, CLI)
+                     # (tools, expression sandbox, agent loop, local-server
+                     # checks, MCP server, CLI)
 templates/
   analysis-project/  # starting point for an analysis that uses tessa
 ```
@@ -230,19 +231,22 @@ create_feature("vibration__jerk", 'pl.col("vibration").diff().abs()',
                rationale="the classes differ in ordering, not in level")
 ```
 
-Three ways to drive it, two of which need no Anthropic key:
+Ways to drive it, of which only the Claude driver (`--provider anthropic`)
+needs an Anthropic key:
 
 ```bash
 uv run tessa-agent --data-root ./demo_data --make-demo --offline   # no model at all
 uv run tessa-agent --data-root data --labels labels.xlsx \
   --goal "What separates TP from FP?" --provider groq             # Groq/OpenRouter/OpenAI
+uv run tessa-agent --data-root data --labels labels.xlsx \
+  --goal "What separates TP from FP?" --provider ollama           # a model on your machine
 uv run tessa-mcp                                                   # any MCP client
 ```
 
-The agent also runs on a model on your own machine, with no key and nothing
-leaving it: `--provider ollama` (or `lmstudio`, `llamacpp`, `vllm`). The server
-is checked before the first turn, notably for a context window large enough for
-the prompt, which Ollama's default is not; see
+A local model (`--provider ollama`, `lmstudio`, `llamacpp` or `vllm`) needs no
+key and keeps your data on the machine. The server is checked before the first
+turn, notably for a context window large enough for the prompt, which Ollama's
+default is not; see
 [Running with a local model](AI_INTEGRATION.md#running-with-a-local-model) for
 the setup.
 

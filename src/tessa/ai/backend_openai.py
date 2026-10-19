@@ -71,9 +71,9 @@ class Provider:
         return self.server is not None
 
 
-# Default models are the current tool-calling-capable choice for each provider and
-# are overridable with --model; nothing here should be treated as pinned. A local
-# preset without a default uses whichever model the server reports it serves.
+# Default models are a tool-calling-capable choice for each provider as of when the
+# preset was added, not necessarily the newest one; override them with --model.
+# A local preset without a default uses whichever model the server serves.
 PROVIDERS: dict[str, Provider] = {
     "groq": Provider(
         name="groq",

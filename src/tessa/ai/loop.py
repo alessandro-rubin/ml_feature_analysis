@@ -2,9 +2,10 @@
 
 One loop, several backends. The old AI layer had the Groq variant import the
 system prompt and tool dispatcher from the Anthropic module but duplicate the
-loop itself; the two then drifted. Here every backend implements a three-line
-protocol and the loop owns everything else — turn capping, failure capping,
-argument parsing, result truncation, and the transcript.
+loop itself; the two then drifted. Here every backend implements a small
+protocol (see :class:`Backend`) and the loop owns everything else: turn
+capping, failure capping, argument parsing, result truncation, context
+compaction, and the transcript.
 
 Invariants worth naming, because they are the ones a hand-rolled loop gets wrong:
 
@@ -15,10 +16,11 @@ Invariants worth naming, because they are the ones a hand-rolled loop gets wrong
 * **Arguments are always parsed as JSON**, never string-matched. Models differ in
   how they escape strings inside tool arguments.
 * **A bounded context window is respected, not overrun.** Given
-  ``context_tokens``, the loop elides the oldest tool results before a request
-  would exceed it, and says so in their place. A local server does not
-  necessarily reject an oversized prompt: Ollama silently drops the oldest
-  messages, the opening one with the goal included.
+  ``context_tokens``, the loop drops older turns' reasoning and then elides the
+  oldest tool results before a request would exceed it, saying so in place of
+  each result. A local server does not necessarily reject an oversized prompt:
+  Ollama silently drops the oldest messages, the opening one with the goal
+  included.
 """
 
 from __future__ import annotations
@@ -264,14 +266,16 @@ def run_loop(
         weaker model looping on a call it cannot get right.
     context_tokens : int, optional
         The model's context window. When given, the request is kept inside it,
-        less the backend's ``max_tokens`` reserved for the reply: the oldest
-        tool results are elided as needed, and each result is capped at half
-        the room the conversation has. Leave unset for a hosted model whose
-        window dwarfs a run.
+        less the backend's ``max_tokens`` reserved for the reply: older turns'
+        reasoning is dropped and then the oldest tool results are elided as
+        needed, and each result is capped at half the room the conversation
+        has. Leave unset for a hosted model whose window dwarfs a run.
     result_byte_cap : int
         Truncate each tool result to this many characters.
     on_event : callable, optional
-        Receives ``(kind, payload)`` for progress display.
+        Receives ``(kind, payload)`` for progress display. Kinds: ``text``,
+        ``reasoning``, ``tool``, ``result``, ``compact``, ``warning``, ``cap``
+        and ``error``.
 
     A model call that raises ends the run with ``stopped_because ==
     "backend_error"`` and the message in ``error``; the work done so far is

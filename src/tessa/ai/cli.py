@@ -245,8 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--context-length",
         type=int,
-        help="The model's context window in tokens. Old tool results are elided to "
-        "stay inside it. Local servers report it themselves when they can.",
+        help="The model's context window in tokens. Older reasoning and tool results "
+        "are dropped to stay inside it. Local servers report it themselves when they "
+        "can. Leave it off for Claude, whose newer models reject edited history.",
     )
     parser.add_argument(
         "--max-tokens",

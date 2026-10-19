@@ -4,20 +4,26 @@ A hosted API either answers or returns an error. A local server can be up and
 still be wrong in ways that only surface as a bad run many minutes later:
 
 * the model is not downloaded, or not the one being served;
-* the model cannot call tools;
+* the model cannot call tools (Ollama reports it; LM Studio reports whether the
+  model was trained for tool use);
+* the model is not loaded yet, so LM Studio will load it with its default
+  context length;
 * the context window is smaller than the prompt. Ollama defaults to 4k tokens
   on GPUs with less than 24 GiB of VRAM, and the system prompt plus the tool
   definitions alone take about twice that. Ollama does not reject an oversized
   prompt: it drops the oldest messages without an error, which cannot make room
   when the fixed part alone does not fit;
 * the model does not fit in VRAM and runs partly on the CPU, so every turn
-  takes minutes.
+  takes minutes;
+* the "local" model is an Ollama cloud model, so the data leaves the machine.
 
-:func:`probe` checks each of these through the server's own endpoints before
-the first turn and reports the context window, so that the loop can keep the
-conversation inside it (``run_loop(context_tokens=...)``). It uses only the
-standard library. On Ollama it loads the model, which the first turn would do
-anyway, because only a loaded model reports the window it was given.
+:func:`probe` checks these through each server's own endpoints, as far as that
+server exposes them, before the first turn. It reports the context window
+(Ollama ``/api/ps``, llama.cpp ``/props``, vLLM ``/v1/models``, LM Studio
+``/api/v1/models`` or ``/api/v0``) so that the loop can keep the conversation
+inside it (``run_loop(context_tokens=...)``). It uses only the standard
+library. On Ollama it loads the model, which the first turn would do anyway,
+because only a loaded model reports the window it was given.
 """
 
 from __future__ import annotations
@@ -306,6 +312,9 @@ def probe(
     model : str, optional
         The model to run. Without one, the preset's default, or the only model
         the server serves.
+    api_key : str, optional
+        For a server started with a key. Defaults to the preset's environment
+        variable (``LM_API_TOKEN``, ``LLAMA_API_KEY``, ``VLLM_API_KEY``).
     timeout : float
         Seconds to wait for each metadata request.
     load_timeout : float
@@ -321,8 +330,9 @@ def probe(
     ------
     LocalServerError
         When the run could not work: no server, a missing model, a model that
-        cannot call tools, or a context window too small for the system prompt.
-        The message names the command that fixes it.
+        cannot call tools (Ollama), or a context window that leaves too little
+        room for tool results once the system prompt, the tool definitions and
+        a reply are paid for. The message names the command that fixes it.
     """
     spec = PROVIDERS.get(provider)
     if spec is None or not spec.local:
