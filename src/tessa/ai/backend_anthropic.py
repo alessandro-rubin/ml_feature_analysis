@@ -107,6 +107,16 @@ class AnthropicBackend:
             }
         )
 
+    def result_slots(self, messages: list[dict]) -> list[tuple[dict, str]]:
+        """Where each tool result's payload sits in ``messages``, oldest first."""
+        return [
+            (block, "content")
+            for m in messages
+            if m.get("role") == "user" and isinstance(m.get("content"), list)
+            for block in m["content"]
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
+
 
 def build_backend(
     model: str = DEFAULT_MODEL, effort: str = "high", **extra: Any

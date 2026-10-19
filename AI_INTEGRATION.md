@@ -18,6 +18,7 @@ them straight from Python with no model at all.
 | **`tessa-agent --provider groq`** (default) | open-weight, via Groq | `GROQ_API_KEY` |
 | **`tessa-agent --provider openrouter`** | any frontier model, Claude included | `OPENROUTER_API_KEY` |
 | **`tessa-agent --provider anthropic`** | Claude | `ANTHROPIC_API_KEY` |
+| **`tessa-agent --provider ollama`** (or `lmstudio`, `llamacpp`, `vllm`) | open-weight, on your own machine | a local server; see [Running with a local model](#running-with-a-local-model) |
 | **`tessa-agent --offline`** | none | nothing |
 
 MCP is a protocol, not a vendor. Running `tessa-mcp` and connecting Claude
@@ -73,6 +74,192 @@ tools.run_analysis(sid, "separability")
 
 ```jsonc
 {"mcpServers": {"tessa": {"command": "tessa-mcp"}}}
+```
+
+---
+
+## Running with a local model
+
+A model on your own machine drives the same tools through the same loop. There
+is no API key and no per-token cost, and nothing leaves the machine: the model
+sees your channel names, class balance and analysis results, and with a local
+server none of that is sent to a provider.
+
+The price is reliability and speed. A run is 20-40 turns, each a tool call that
+must be valid JSON against a 20-tool schema, and that is harder for an 8-30B
+model than for a frontier one. Expect more malformed calls, shallower feature
+ideas and slower turns, and use the largest model your memory allows.
+
+### What you need
+
+| Model (Ollama tag) | Memory at a 32k window | Notes |
+|---|---|---|
+| `qwen3:8b` | about 10 GB | the smallest that is usable; more malformed calls |
+| `qwen3:14b` | about 15 GB | **the default**: good tool calling for its size |
+| `gpt-oss:20b` | about 16 GB | strong tool use; a reasoning model |
+| `qwen3:30b` | about 22 GB | mixture of experts with 3B active parameters: fast even partly on CPU |
+
+Memory figures are rough: weights at Ollama's default 4-bit quantization plus the
+KV cache for a 32k-token window. Newer families with tool calling, such as Qwen
+3.5 and Gemma 4, are worth trying; check their sizes in the
+[Ollama library's Tools filter](https://ollama.com/search?c=tools) and pass the
+tag with `--model`. Any model without tool calling is refused before the run.
+
+**The context window is the setting that matters most.** The system prompt and
+tool definitions alone take about 8k tokens, and every tool result adds to them.
+Ollama's default window depends on VRAM: 4k tokens below 24 GiB, 32k from 24 to
+48 GiB, 256k above. At 4k even the fixed part of the prompt does not fit. Nor
+does Ollama reject a prompt that is too long: it silently drops the oldest
+messages, the one stating your goal first. `tessa-agent` checks the window
+before the first turn and refuses one that is too small, naming the fix, and
+keeps the conversation inside a window that is big enough (see below). Aim for
+32k tokens; 16k works, with older tool results elided sooner.
+
+### Ollama (recommended)
+
+```bash
+# 1. Install it: https://ollama.com/download (on Linux: curl -fsSL https://ollama.com/install.sh | sh)
+
+# 2. Start the server with a 32k window
+OLLAMA_CONTEXT_LENGTH=32768 ollama serve
+
+# 3. In another terminal, download the model (about 9 GB)
+ollama pull qwen3:14b
+
+# 4. Run the agent
+uv sync --extra ai
+uv run tessa-agent --data-root ./demo_data --make-demo --provider ollama \
+  --goal "What separates calm from jittery events? Invent features if the stock aggregates are not enough."
+```
+
+If Ollama already runs in the background (the desktop app, or the Linux
+installer's systemd service), set the variable where that process reads it,
+then restart it:
+
+- **macOS app:** `launchctl setenv OLLAMA_CONTEXT_LENGTH 32768`, or the context
+  length slider in the app's settings.
+- **Linux service:** `sudo systemctl edit ollama.service`, add
+  `Environment="OLLAMA_CONTEXT_LENGTH=32768"` under `[Service]`, then
+  `sudo systemctl daemon-reload && sudo systemctl restart ollama`.
+- **Windows:** add `OLLAMA_CONTEXT_LENGTH` to your user environment variables,
+  quit Ollama from the taskbar and start it again.
+
+If you cannot change the server, give the model its own window instead:
+
+```bash
+printf 'FROM qwen3:14b\nPARAMETER num_ctx 32768\n' > Modelfile
+ollama create qwen3-14b-32k -f Modelfile
+uv run tessa-agent ... --provider ollama --model qwen3-14b-32k
+```
+
+`ollama ps` shows the window a loaded model got (`CONTEXT`) and how much of it
+runs on the GPU (`PROCESSOR`). For Ollama on another machine, start it there
+with `OLLAMA_HOST=0.0.0.0:11434` and pass `--base-url http://<host>:11434/v1`.
+Ollama has no authentication, so do that on a trusted network only.
+
+### LM Studio
+
+1. Install [LM Studio](https://lmstudio.ai) and download a model that supports
+   tool use, in the app or with `lms get <model>`.
+2. Start the server and load the model with a 32k window. Load it explicitly:
+   a model the server loads on demand gets the default context length.
+
+   ```bash
+   lms server start
+   lms load <model> --context-length 32768
+   ```
+
+3. Run the agent. `--model` is only needed when LM Studio offers several models;
+   the names are those `lms ls` lists.
+
+   ```bash
+   uv run tessa-agent ... --provider lmstudio --model <model>
+   ```
+
+### llama.cpp
+
+Install it with `brew install llama.cpp` (macOS, Linux), `winget install
+llama.cpp` (Windows), or a [release binary](https://github.com/ggml-org/llama.cpp/releases),
+then start the server on a GGUF file or a Hugging Face repository:
+
+```bash
+llama-server -hf ggml-org/gpt-oss-20b-GGUF --jinja -c 32768 -np 1 --port 8080
+# or a file you already have:
+llama-server -m ./model.gguf --jinja -c 32768 -np 1 --port 8080
+
+uv run tessa-agent ... --provider llamacpp
+```
+
+`--jinja` (the default in recent builds) is what makes the server parse tool
+calls; `-np 1` gives the whole window to one conversation instead of splitting
+it between parallel slots. If the server was started with `--api-key`, export
+the same key as `LLAMA_API_KEY`.
+
+### vLLM
+
+For Linux with an NVIDIA or AMD GPU. vLLM parses tool calls only when told which
+format the model uses:
+
+```bash
+pip install vllm
+vllm serve Qwen/Qwen3-14B --max-model-len 32768 \
+  --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3
+# gpt-oss:  vllm serve openai/gpt-oss-20b --max-model-len 32768 \
+#             --enable-auto-tool-choice --tool-call-parser openai
+
+uv run tessa-agent ... --provider vllm
+```
+
+The parser for other models is in vLLM's tool-calling documentation. If the
+server was started with `--api-key`, export the same key as `VLLM_API_KEY`.
+
+### What `tessa-agent` does differently for a local server
+
+- **It checks the server before the first turn** (`tessa.ai.local.probe`): that
+  it answers, that it has the model (with the command to get it), that the
+  model can call tools (Ollama), that the context window holds the prompt, and
+  whether the model spills onto the CPU (Ollama). It also warns when an Ollama
+  model is a cloud model, whose prompts do leave the machine. `--skip-check`
+  turns the check off.
+- **It keeps the conversation inside the window.** It reads the window from the
+  server (Ollama, llama.cpp, vLLM, and LM Studio for a loaded model), or takes
+  it from `--context-length`. Before a request would overflow, the oldest tool
+  results are replaced by a short note telling the model to call the tool again
+  if it needs the result; each new result is capped at half the room
+  available, and a reply at a quarter of the window. `--context-length` turns
+  this on for any provider.
+- **It recovers tool calls a server left in the text.** When the server does not
+  parse a model's call format, the call arrives as text, `<tool_call>{...}`
+  or a bare JSON object, and the run would end on its first turn. Such calls are
+  run anyway, with a warning, because they mean the server's tool-calling setup
+  needs fixing.
+- **It samples at temperature 0.6** instead of 0: greedy decoding sends small
+  models into repetition loops, and Ollama substitutes 1.0 when no temperature is
+  sent. `--temperature` overrides it.
+- **A model call may take 30 minutes** and is not retried, since a retry would
+  repeat the wait. `--timeout` changes the limit.
+- **A server that fails mid-run** (out of memory, restarted) ends the run with
+  `stopped: backend_error` and exit code 1, keeping the turns already done.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `No Ollama server is answering at ...` | the server is not running, or listens elsewhere | `ollama serve` (or the server's own command); `--base-url` |
+| `... runs <model> with a 4096-token context window` | the server's default window | the window settings above |
+| `does not serve 'qwen3:14b'` | the model is not downloaded | `ollama pull qwen3:14b`, or `--model` with one the message lists |
+| `cannot call tools` | the model has no tool calling | a model with the Tools tag |
+| warning `recovered N tool call(s) from the message text` | the server does not parse the model's calls | llama.cpp: `--jinja`; vLLM: `--enable-auto-tool-choice --tool-call-parser ...` |
+| the run ends after one turn, with JSON in the text | as above, in a format that cannot be recovered | as above |
+| `stopped: too_many_failures` | the model keeps sending invalid calls | a larger model; `-v` shows the calls and the hints it was given |
+| every turn takes minutes | the model runs partly or fully on the CPU | a smaller model or window, or `qwen3:30b` |
+| `stopped: backend_error` | the server ran out of memory or timed out | a smaller model or window; `--timeout` |
+
+To check a setup end to end with a short real run:
+
+```bash
+TESSA_LIVE_LOCAL=ollama uv run pytest -m live -q
+TESSA_LIVE_LOCAL=llamacpp TESSA_LIVE_MODEL=<id> uv run pytest -m live -q
 ```
 
 ---
@@ -274,7 +461,7 @@ library will warn accordingly.
 
 ```
 tools.py ── plain functions, no SDK ──┬── mcp_server.py   (any MCP client)
-                                      └── schemas.py ──┬── backend_openai.py
+                                      └── schemas.py ──┬── backend_openai.py ── local.py (preflight)
                                                        └── backend_anthropic.py
                                                             └── loop.py
 ```
@@ -285,6 +472,11 @@ serves both backends; each backend only translates message formats. The previous
 version of this layer hand-wrote Anthropic schemas, re-serialized them for the
 OpenAI path, and duplicated the loop — and the copies drifted apart.
 
+Local servers need no backend of their own: they speak the OpenAI protocol, so a
+local preset is a base URL plus two switches on the OpenAI-compatible backend
+(text tool-call recovery, a non-zero temperature). What differs between servers
+is checked before the run, by `local.py`.
+
 | Module | Role |
 |---|---|
 | `session.py` | Per-run state; cloned registries; the feature ledger |
@@ -294,8 +486,9 @@ OpenAI path, and duplicated the loop — and the copies drifted apart.
 | `tools.py` | The 20 tool functions |
 | `schemas.py` | Schema derivation + per-provider adapters |
 | `prompts.py` | System prompt and exploration playbook |
-| `loop.py` | Provider-neutral agent loop |
-| `backend_openai.py` | Groq / OpenRouter / OpenAI / local |
+| `loop.py` | Provider-neutral agent loop, including context-window compaction |
+| `backend_openai.py` | Groq / OpenRouter / OpenAI / Ollama / LM Studio / llama.cpp / vLLM |
+| `local.py` | Preflight check of a local server: model, tool support, context window |
 | `backend_anthropic.py` | Claude (`claude-opus-5`) |
 | `cli.py` | `tessa-agent`, including `--offline` |
 | `mcp_server.py` | `tessa-mcp` |
@@ -311,6 +504,14 @@ OpenAI path, and duplicated the loop — and the copies drifted apart.
   teaches a model to stop making parallel calls.
 - Arguments are always parsed as JSON, never string-matched.
 - Payloads are truncated to 20 KB before entering context.
+- Given a context window (`context_tokens`), the oldest tool results are
+  replaced by a short note before a request would overflow it, down to 60% of
+  the budget so that it happens rarely: each time changes the prompt prefix a
+  local server caches between turns. The opening message and the newest
+  results are never elided. Tokens are estimated at 3 characters each, on the
+  safe side for this JSON-heavy traffic.
+- A model call that raises ends the run with `stopped_because="backend_error"`
+  instead of an exception, so a server crash late in a run keeps what was done.
 
 ---
 
@@ -319,7 +520,9 @@ OpenAI path, and duplicated the loop — and the copies drifted apart.
 Everything above is tested with no credentials and no network — the sandbox
 against real escape attempts, session isolation, the tool surface end to end on
 synthetic data, schema derivation, both backend adapters against fake clients,
-and the loop against a stub backend.
+the loop against a stub backend, and the local-server path (preflight checks,
+CLI runs through the real OpenAI SDK) against a fake server on 127.0.0.1 that
+answers like Ollama, LM Studio, llama.cpp or vLLM.
 
 ```bash
 uv run pytest -q                    # `live` tests are deselected by default

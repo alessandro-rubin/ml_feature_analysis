@@ -427,6 +427,11 @@ Consequences that had to be handled rather than designed around:
 - An AI-authored column is unexplainable once the process exits, so the feature
   ledger — expression, rationale, measured contribution — is persisted into the
   `ResultStore` manifest.
+- A local model's context window can be smaller than a run, and a local server
+  does not necessarily reject an overflow (Ollama drops the oldest messages
+  silently). `local.py` checks the window before the first turn, and the loop
+  keeps the history inside it by eliding the oldest tool results, with a note
+  in their place.
 
 The sandbox's threat model, the tool reference and the expression language are
 documented in [AI_INTEGRATION.md](AI_INTEGRATION.md).

@@ -206,3 +206,137 @@ def test_large_payloads_are_truncated_before_reaching_the_model():
     run_loop(backend, "sys", "go", on_event=lambda k, p: events.append((k, p)))
     payload = next(p for k, p in events if k == "result")["payload"]
     assert len(payload) <= 20_000 + 200
+
+
+# -- failures and warnings from the backend -----------------------------------
+
+
+def test_a_failing_model_call_ends_the_run_without_losing_it():
+    """A local server that dies mid-run (OOM, restart) must not discard the work."""
+
+    class Dying(StubBackend):
+        def complete(self, system, messages, tools):
+            if self.calls == 1:
+                raise ConnectionError("model runner has unexpectedly stopped")
+            return super().complete(system, messages, tools)
+
+    backend = Dying([BackendTurn(text="working", tool_calls=[_call()], stop_reason="tool_use")])
+    events = []
+    result = run_loop(backend, "sys", "go", on_event=lambda k, p: events.append((k, p)))
+
+    assert result.stopped_because == "backend_error"
+    assert "unexpectedly stopped" in result.error
+    assert (result.turns, result.tool_calls, result.final_text) == (1, 1, "working")
+    assert any(k == "error" for k, _ in events)
+
+
+def test_backend_warnings_are_passed_on():
+    backend = StubBackend([BackendTurn(text="done", warnings=["recovered 1 tool call"])])
+    events = []
+    run_loop(backend, "sys", "go", on_event=lambda k, p: events.append((k, p)))
+    assert ("warning", {"message": "recovered 1 tool call"}) in events
+
+
+# -- a bounded context window -------------------------------------------------
+
+
+@dataclass
+class SlottedStub(StubBackend):
+    """A stub whose tool results can be compacted, like the real backends'."""
+
+    max_tokens: int = 0
+
+    def result_slots(self, messages):
+        return [
+            (entry, "payload")
+            for m in messages
+            if m.get("role") == "tool_batch"
+            for entry in m["content"]
+        ]
+
+
+@pytest.fixture
+def big_results(monkeypatch):
+    """Every tool returns a 3 000-character payload."""
+    from tessa.ai import loop
+
+    monkeypatch.setattr(loop.tool_module, "call_tool", lambda name, args: {"blob": "x" * 3_000})
+
+
+def _payloads(messages):
+    return [e["payload"] for m in messages if m.get("role") == "tool_batch" for e in m["content"]]
+
+
+def test_old_results_are_elided_to_stay_inside_the_window(big_results):
+    from tessa.ai.loop import CHARS_PER_TOKEN, ELIDED
+
+    turns = [BackendTurn(tool_calls=[_call(cid=f"c{i}")], stop_reason="tool_use") for i in range(8)]
+    backend = SlottedStub([*turns, BackendTurn(text="done")])
+    system = "sys"
+    static = len(system) + len(json.dumps(backend.tool_schemas()))
+    # Room for about four results.
+    context = int((static + 4 * 3_100) / CHARS_PER_TOKEN)
+
+    events = []
+    result = run_loop(
+        backend, system, "go", context_tokens=context, on_event=lambda k, p: events.append((k, p))
+    )
+
+    assert result.final_text == "done"
+    assert any(k == "compact" for k, _ in events)
+    last_request = backend.seen_messages[-1]
+    payloads = _payloads(last_request)
+    assert len(payloads) == 8
+    assert payloads[0] == ELIDED, "the oldest result goes first"
+    assert payloads[-1] != ELIDED, "the result the model has not read yet stays"
+    assert len(json.dumps(last_request, default=str)) <= int(context * CHARS_PER_TOKEN) - static
+
+
+def test_nothing_is_elided_without_a_context_window(big_results):
+    from tessa.ai.loop import ELIDED
+
+    turns = [BackendTurn(tool_calls=[_call(cid=f"c{i}")], stop_reason="tool_use") for i in range(6)]
+    backend = SlottedStub([*turns, BackendTurn(text="done")])
+    run_loop(backend, "sys", "go")
+    assert ELIDED not in _payloads(backend.seen_messages[-1])
+
+
+def test_a_small_window_caps_each_result(monkeypatch):
+    from tessa.ai import loop
+
+    monkeypatch.setattr(loop.tool_module, "call_tool", lambda name, args: {"blob": "x" * 50_000})
+    backend = SlottedStub(
+        [BackendTurn(tool_calls=[_call()], stop_reason="tool_use"), BackendTurn(text="done")]
+    )
+    events = []
+    run_loop(
+        backend, "sys", "go", context_tokens=5_000, on_event=lambda k, p: events.append((k, p))
+    )
+    payload = next(p for k, p in events if k == "result")["payload"]
+    # Half the room, which is well under the default 20 000-character cap.
+    assert len(payload) < 5_000 * loop.CHARS_PER_TOKEN / 2 + 100
+
+
+def test_the_reply_reserve_comes_out_of_the_window(big_results):
+    """Room for the reply is not room for the conversation (vLLM rejects the overlap)."""
+    turns = [BackendTurn(tool_calls=[_call(cid=f"c{i}")], stop_reason="tool_use") for i in range(4)]
+    roomy = SlottedStub([*turns, BackendTurn(text="done")])
+    tight = SlottedStub([*turns, BackendTurn(text="done")], max_tokens=4_000)
+
+    def compactions(backend):
+        events = []
+        run_loop(backend, "sys", "go", context_tokens=8_000, on_event=lambda k, p: events.append(k))
+        return events.count("compact")
+
+    assert compactions(roomy) == 0
+    assert compactions(tight) > 0
+
+
+def test_a_window_too_small_for_the_prompt_warns_instead_of_crashing():
+    backend = SlottedStub([BackendTurn(text="done")])
+    events = []
+    result = run_loop(
+        backend, "x" * 10_000, "go", context_tokens=100, on_event=lambda k, p: events.append(k)
+    )
+    assert result.final_text == "done"
+    assert "warning" in events
