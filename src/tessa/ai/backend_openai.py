@@ -118,7 +118,8 @@ PROVIDERS: dict[str, Provider] = {
     ),
     "llamacpp": Provider(
         name="llamacpp",
-        base_url="http://localhost:8080/v1",
+        # llama-server's default port; builds before the change listened on 8080.
+        base_url="http://localhost:9931/v1",
         key_env="LLAMA_API_KEY",
         default_model=None,
         note="llama.cpp's llama-server. Start it with --jinja (the default in recent "
@@ -153,26 +154,38 @@ _TOOL_CALL_TAG = re.compile(
     re.DOTALL,
 )
 _TAG_OPENERS = ("<tool_call>", "[TOOL_REQUEST]")
+# The Qwen3-Coder format, also Qwen3.5 / Qwen3.6's: XML, not JSON, inside the tag.
+_XML_FUNCTION = re.compile(r"<function=([^>\s]+)>(.*?)(?:</function>|\Z)", re.DOTALL)
+_XML_PARAMETER = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.DOTALL)
 _FENCE = re.compile(r"\A```(?:json)?\s*(.*?)\s*```\Z", re.DOTALL)
 _CALL_MARKERS = ("[TOOL_CALLS]", "<|python_tag|>")
 # Where servers put a reasoning model's reasoning, outside `content`.
 _REASONING_FIELDS = ("reasoning", "reasoning_content")
 
 
-def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, Any]], str]:
+def recover_tool_calls(
+    text: str,
+    tool_names: set[str],
+    param_types: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
     """Pull tool calls out of message text, for a server that did not parse them.
 
-    Only two shapes are accepted, so a written report that merely quotes a call
-    is not mistaken for one:
+    Only these shapes are accepted, so a written report that merely quotes a
+    call is not mistaken for one:
 
     * ``<tool_call>{...}</tool_call>`` blocks (the Hermes / Qwen format) and
       ``[TOOL_REQUEST]{...}[END_TOOL_REQUEST]`` blocks (LM Studio's format for
       models without a tool-calling template of their own);
+    * ``<function=name><parameter=key>value</parameter></function>`` blocks,
+      inside ``<tool_call>`` or on their own (the Qwen3-Coder format, which
+      Qwen3.5 and Qwen3.6 use too);
     * a message that is nothing but one JSON object or a list of them, allowing
       for a code fence or a ``[TOOL_CALLS]`` / ``<|python_tag|>`` marker.
 
-    Each object must name a known tool, with its arguments under ``arguments``
-    or ``parameters``.
+    Each call must name a known tool. JSON calls carry their arguments under
+    ``arguments`` or ``parameters``. XML parameter values are plain text: they
+    are kept as strings where ``param_types`` (tool name -> parameter name ->
+    JSON Schema type) says ``"string"``, and read as JSON where it parses.
 
     Returns
     -------
@@ -192,12 +205,30 @@ def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, 
         try:
             value = json.loads(fragment)
         except ValueError:
-            return None
+            return parse_xml(fragment)
         items = value if isinstance(value, list) else [value]
         calls = [as_call(item) for item in items]
         if not calls or any(c is None for c in calls):
             return None
         return calls
+
+    def parse_xml(fragment: str) -> list[dict[str, Any]] | None:
+        calls = []
+        for name, body in _XML_FUNCTION.findall(fragment):
+            if name not in tool_names:
+                return None
+            types = (param_types or {}).get(name, {})
+            arguments: dict[str, Any] = {}
+            for key, raw in _XML_PARAMETER.findall(body):
+                value: Any = raw.strip()
+                if types.get(key) != "string":
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        pass
+                arguments[key] = value
+            calls.append({"name": name, "arguments": arguments})
+        return calls or None
 
     if any(opener in text for opener in _TAG_OPENERS):
         calls: list[dict[str, Any]] = []
@@ -211,6 +242,12 @@ def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, 
 
         remaining = _TOOL_CALL_TAG.sub(take, text)
         return (calls, remaining.strip()) if calls else ([], text)
+
+    if "<function=" in text and "<parameter=" in text:
+        parsed = parse_xml(text)
+        if parsed:
+            return parsed, _XML_FUNCTION.sub("", text).strip()
+        return [], text
 
     body = text.strip()
     for marker in _CALL_MARKERS:
@@ -283,7 +320,14 @@ class OpenAICompatibleBackend:
         warnings: list[str] = []
         if not calls and tools and self.recover_text_calls and text:
             names = {t["function"]["name"] for t in tools}
-            recovered, text = recover_tool_calls(text, names)
+            types = {
+                t["function"]["name"]: {
+                    key: prop.get("type", "")
+                    for key, prop in t["function"]["parameters"].get("properties", {}).items()
+                }
+                for t in tools
+            }
+            recovered, text = recover_tool_calls(text, names, types)
             for item in recovered:
                 arguments, error = parse_arguments(item["arguments"])
                 raw = item["arguments"]

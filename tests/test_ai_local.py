@@ -210,6 +210,12 @@ def test_no_server_names_the_start_command():
         probe("ollama", base_url=_closed_port_url(), timeout=2)
 
 
+def test_no_llamacpp_server_mentions_the_old_default_port():
+    with pytest.raises(LocalServerError, match="llama-server") as info:
+        probe("llamacpp", base_url=_closed_port_url(), timeout=2)
+    assert "http://localhost:8080/v1" in str(info.value)
+
+
 def test_a_base_url_without_v1_gets_a_hint(server):
     _ollama(server)
     with pytest.raises(LocalServerError, match="usually ends in /v1"):
