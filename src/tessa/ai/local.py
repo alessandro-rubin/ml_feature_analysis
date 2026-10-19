@@ -244,17 +244,44 @@ def _llamacpp_context(root: str, model: str, **request: Any) -> int | None:
 
 
 def _lmstudio_context(root: str, model: str, warnings: list[str], **request: Any) -> int | None:
+    not_loaded = (
+        f"{model} is not loaded yet, so LM Studio will load it on the first request with "
+        f"its default context length. Load it first with:  lms load {model} "
+        "--context-length 32768"
+    )
+
+    # The native REST API since LM Studio 0.4. `model` is the model's key, or the
+    # identifier of one loaded instance (`lms load ... --identifier`).
+    listing = _optional(f"{root}/api/v1/models", **request)
+    if isinstance(listing, dict) and isinstance(listing.get("models"), list):
+        for entry in listing["models"]:
+            if not isinstance(entry, dict):
+                continue
+            instances = [i for i in entry.get("loaded_instances") or [] if isinstance(i, dict)]
+            if entry.get("key") != model and not any(i.get("id") == model for i in instances):
+                continue
+            if (entry.get("capabilities") or {}).get("trained_for_tool_use") is False:
+                warnings.append(
+                    f"{model} was not trained for tool use, so LM Studio prompts it with a "
+                    "generic call format; expect more malformed calls than from a model "
+                    "with native tool use (the hammer badge in LM Studio)."
+                )
+            instance = next((i for i in instances if i.get("id") == model), None)
+            instance = instance or (instances[0] if instances else None)
+            if instance is None:
+                warnings.append(not_loaded)
+                return None
+            return (instance.get("config") or {}).get("context_length") or None
+        return None
+
+    # LM Studio before 0.4: the v0 REST API.
     info = _optional(f"{root}/api/v0/models/{urllib.parse.quote(model, safe='')}", **request)
     if not isinstance(info, dict):
         return None
     if info.get("loaded_context_length"):
         return info["loaded_context_length"]
     if info.get("state") == "not-loaded":
-        warnings.append(
-            f"{model} is not loaded yet, so LM Studio will load it on the first request "
-            f"with its default context length. Load it first with:  lms load {model} "
-            "--context-length 32768"
-        )
+        warnings.append(not_loaded)
     return None
 
 

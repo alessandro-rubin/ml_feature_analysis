@@ -83,14 +83,17 @@ class BackendTurn:
     usage: dict[str, Any] = field(default_factory=dict)
     raw: Any = None
     warnings: list[str] = field(default_factory=list)
+    reasoning: str = ""
 
 
 class Backend(Protocol):
     """The whole provider surface the loop depends on.
 
     A backend may also define ``result_slots(messages)``, returning a
-    ``(container, key)`` pair for each tool result's payload, oldest first. The
-    loop needs it only to compact the history for a bounded context window.
+    ``(container, key)`` pair for each tool result's payload, oldest first, and
+    ``reasoning_slots(messages)``, the same for reasoning kept in assistant
+    messages. The loop needs them only to compact the history for a bounded
+    context window.
     """
 
     name: str
@@ -176,17 +179,28 @@ class _ContextBudget:
     warned: bool = False
 
     def fit(self, backend: Backend, messages: list[dict], protect: int, emit) -> None:
-        """Elide the oldest tool results until ``messages`` fit the budget.
+        """Drop old reasoning, then elide the oldest tool results, until
+        ``messages`` fit the budget.
 
-        The newest ``protect`` results are never elided: the model has not
-        read them yet.
+        Reasoning goes first: it led to calls whose results are still there.
+        The newest reasoning and the newest ``protect`` results are kept: the
+        model is in the middle of acting on them.
         """
         size = len(json.dumps(messages, default=str))
         if size <= self.chars:
             return
+        target = self.chars * COMPACT_TO
+
+        thoughts = backend.reasoning_slots(messages) if hasattr(backend, "reasoning_slots") else []
+        dropped = 0
+        for container, key in thoughts[:-1]:
+            if size <= target:
+                break
+            size -= len(json.dumps(container.pop(key), default=str))
+            dropped += 1
+
         slots = backend.result_slots(messages) if hasattr(backend, "result_slots") else []
         candidates = slots[: len(slots) - protect] if protect else slots
-        target = self.chars * COMPACT_TO
         elided = 0
         for container, key in candidates:
             if size <= target:
@@ -197,12 +211,14 @@ class _ContextBudget:
             container[key] = ELIDED
             size -= len(payload) - len(ELIDED)
             elided += 1
+
         size = len(json.dumps(messages, default=str))
-        if elided:
+        if elided or dropped:
             emit(
                 "compact",
                 {
                     "elided": elided,
+                    "reasoning_dropped": dropped,
                     "estimated_tokens": math.ceil(size / CHARS_PER_TOKEN),
                     "budget_tokens": math.ceil(self.chars / CHARS_PER_TOKEN),
                 },
@@ -316,6 +332,8 @@ def run_loop(
                 usage_total[key] = usage_total.get(key, 0) + value
         for message in turn.warnings:
             emit("warning", {"message": message})
+        if turn.reasoning:
+            emit("reasoning", {"text": turn.reasoning})
 
         if turn.text:
             final_text = turn.text

@@ -75,6 +75,18 @@
   - New CLI options: `--context-length`, `--max-tokens`, `--temperature`,
     `--timeout`, `--skip-check`.
   - `TESSA_LIVE_LOCAL=<server>` runs the opt-in live test against a local server.
+  - A reasoning model's reasoning is sent back with its turn on local servers,
+    under the field name the server used (`reasoning` for Ollama and vLLM,
+    `reasoning_content` for llama.cpp), as Qwen3 and gpt-oss expect during a
+    chain of tool calls. Context compaction drops older turns' reasoning
+    before it elides any tool result (`reasoning_slots` backend hook).
+    `--no-reasoning-echo` turns it off; `-v` prints the reasoning.
+  - LM Studio's context window is read from its `/api/v1/models` REST API
+    (LM Studio 0.4+), including instances loaded under a custom
+    `--identifier`, with `/api/v0` as the fallback for older versions. The
+    check warns about a model LM Studio marks as not trained for tool use, the
+    `lmstudio` preset sends `LM_API_TOKEN` when it is set, and LM Studio's
+    `[TOOL_REQUEST]...[END_TOOL_REQUEST]` call format is recovered from text.
 - A model call that raises now ends `run_loop` with
   `stopped_because="backend_error"` and the message in `AgentResult.error`,
   keeping the turns already done; `tessa-agent` exits with code 1.

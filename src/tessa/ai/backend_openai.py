@@ -6,7 +6,7 @@ is a change of base URL, environment variable and model name — nothing more.
 
 Local servers (Ollama, LM Studio, llama.cpp, vLLM) speak the same protocol, so
 they need no backend of their own; what differs is checked before the run by
-``tessa.ai.local`` and handled here by two switches a preset turns on:
+``tessa.ai.local`` and handled here by three switches a preset turns on:
 
 * **tool calls left in the message text are recovered.** When a server's chat
   template or tool parser does not recognize a model's call format, the call
@@ -14,6 +14,13 @@ they need no backend of their own; what differs is checked before the run by
 * **a moderate temperature is sent.** Greedy decoding sends small open-weight
   models into repetition loops (Qwen3's model card warns against it), and
   Ollama's OpenAI endpoint substitutes 1.0 when no temperature is sent at all.
+* **a reasoning model's reasoning is sent back with its turn.** Qwen3 and
+  gpt-oss are built to see their earlier reasoning while they work through a
+  chain of tool calls. Servers return it outside ``content`` under one of two
+  names (``reasoning`` from Ollama and vLLM, ``reasoning_content`` from
+  llama.cpp; LM Studio uses either) and read it back under the same one, so it
+  is returned under the name it arrived with. Hosted providers are left out:
+  some reject unknown message fields.
 
 This module deliberately contains no Anthropic SDK usage; see
 ``backend_anthropic`` for that path.
@@ -103,7 +110,7 @@ PROVIDERS: dict[str, Provider] = {
     "lmstudio": Provider(
         name="lmstudio",
         base_url="http://localhost:1234/v1",
-        key_env=None,
+        key_env="LM_API_TOKEN",
         default_model=None,
         note="LM Studio's local server. Load the model with a 32k+ context length.",
         server="lmstudio",
@@ -141,9 +148,15 @@ PROVIDERS: dict[str, Provider] = {
 }
 
 
-_TOOL_CALL_TAG = re.compile(r"<tool_call>\s*(.*?)\s*(?:</tool_call>|\Z)", re.DOTALL)
+_TOOL_CALL_TAG = re.compile(
+    r"(?:<tool_call>|\[TOOL_REQUEST\])\s*(.*?)\s*(?:</tool_call>|\[END_TOOL_REQUEST\]|\Z)",
+    re.DOTALL,
+)
+_TAG_OPENERS = ("<tool_call>", "[TOOL_REQUEST]")
 _FENCE = re.compile(r"\A```(?:json)?\s*(.*?)\s*```\Z", re.DOTALL)
 _CALL_MARKERS = ("[TOOL_CALLS]", "<|python_tag|>")
+# Where servers put a reasoning model's reasoning, outside `content`.
+_REASONING_FIELDS = ("reasoning", "reasoning_content")
 
 
 def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, Any]], str]:
@@ -152,7 +165,9 @@ def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, 
     Only two shapes are accepted, so a written report that merely quotes a call
     is not mistaken for one:
 
-    * ``<tool_call>{...}</tool_call>`` blocks (the Hermes / Qwen format);
+    * ``<tool_call>{...}</tool_call>`` blocks (the Hermes / Qwen format) and
+      ``[TOOL_REQUEST]{...}[END_TOOL_REQUEST]`` blocks (LM Studio's format for
+      models without a tool-calling template of their own);
     * a message that is nothing but one JSON object or a list of them, allowing
       for a code fence or a ``[TOOL_CALLS]`` / ``<|python_tag|>`` marker.
 
@@ -184,7 +199,7 @@ def recover_tool_calls(text: str, tool_names: set[str]) -> tuple[list[dict[str, 
             return None
         return calls
 
-    if "<tool_call>" in text:
+    if any(opener in text for opener in _TAG_OPENERS):
         calls: list[dict[str, Any]] = []
 
         def take(match: re.Match) -> str:
@@ -220,8 +235,10 @@ class OpenAICompatibleBackend:
     temperature: float = 0.0
     max_tokens: int = DEFAULT_MAX_TOKENS
     recover_text_calls: bool = False
+    echo_reasoning: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
     _recovered: int = field(default=0, init=False, repr=False)
+    _reasoning_field: str = field(default="reasoning", init=False, repr=False)
 
     def tool_schemas(self) -> list[dict]:
         return to_openai_tools()
@@ -242,6 +259,13 @@ class OpenAICompatibleBackend:
         choice = response.choices[0]
         message = choice.message
         text = (message.content or "").strip()
+
+        reasoning = ""
+        for name in _REASONING_FIELDS:
+            value = getattr(message, name, None)
+            if isinstance(value, str) and value.strip():
+                reasoning, self._reasoning_field = value.strip(), name
+                break
 
         calls: list[ToolCall] = []
         for raw_call in getattr(message, "tool_calls", None) or []:
@@ -300,23 +324,25 @@ class OpenAICompatibleBackend:
             usage=usage,
             raw=response,
             warnings=warnings,
+            reasoning=reasoning,
         )
 
     def append_turn(self, messages: list[dict], turn: BackendTurn) -> None:
-        messages.append(
-            {
-                "role": "assistant",
-                "content": turn.text or None,
-                "tool_calls": [
-                    {
-                        "id": c.id,
-                        "type": "function",
-                        "function": {"name": c.name, "arguments": c.raw_arguments or "{}"},
-                    }
-                    for c in turn.tool_calls
-                ],
-            }
-        )
+        message: dict[str, Any] = {
+            "role": "assistant",
+            "content": turn.text or None,
+            "tool_calls": [
+                {
+                    "id": c.id,
+                    "type": "function",
+                    "function": {"name": c.name, "arguments": c.raw_arguments or "{}"},
+                }
+                for c in turn.tool_calls
+            ],
+        }
+        if self.echo_reasoning and turn.reasoning:
+            message[self._reasoning_field] = turn.reasoning
+        messages.append(message)
 
     def append_results(self, messages: list[dict], results: list[tuple[ToolCall, str]]) -> None:
         # One `tool` message per call, all appended before the next completion —
@@ -328,6 +354,16 @@ class OpenAICompatibleBackend:
         """Where each tool result's payload sits in ``messages``, oldest first."""
         return [(m, "content") for m in messages if m.get("role") == "tool"]
 
+    def reasoning_slots(self, messages: list[dict]) -> list[tuple[dict, str]]:
+        """Where reasoning sent back with assistant turns sits, oldest first."""
+        return [
+            (m, name)
+            for m in messages
+            if m.get("role") == "assistant"
+            for name in _REASONING_FIELDS
+            if name in m
+        ]
+
 
 def build_backend(
     provider: str = "groq",
@@ -338,13 +374,15 @@ def build_backend(
     temperature: float | None = None,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    echo_reasoning: bool | None = None,
     **extra: Any,
 ) -> OpenAICompatibleBackend:
     """Construct a backend for one of the known providers.
 
     This makes no network call. For a local preset, run
     ``tessa.ai.local.probe`` first: it checks the server, and resolves the model
-    when the preset has no default.
+    when the preset has no default. ``echo_reasoning`` defaults to on for local
+    presets and off for hosted providers.
 
     Raises
     ------
@@ -398,5 +436,6 @@ def build_backend(
         temperature=spec.temperature if temperature is None else temperature,
         max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
         recover_text_calls=spec.local,
+        echo_reasoning=spec.local if echo_reasoning is None else echo_reasoning,
         extra=extra,
     )
