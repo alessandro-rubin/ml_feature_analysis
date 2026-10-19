@@ -10,13 +10,14 @@ them straight from Python with no model at all.
 
 ---
 
-## Three ways to drive it
+## Ways to drive it
 
 | Route | Model | Needs |
 |---|---|---|
 | **MCP client** (Claude Desktop, Claude Code, Cline, Zed, …) | whatever the client uses | no API key of your own |
 | **`tessa-agent --provider groq`** (default) | open-weight, via Groq | `GROQ_API_KEY` |
 | **`tessa-agent --provider openrouter`** | any frontier model, Claude included | `OPENROUTER_API_KEY` |
+| **`tessa-agent --provider openai`** | OpenAI models | `OPENAI_API_KEY` |
 | **`tessa-agent --provider anthropic`** | Claude | `ANTHROPIC_API_KEY` |
 | **`tessa-agent --provider ollama`** (or `lmstudio`, `llamacpp`, `vllm`) | open-weight, on your own machine | a local server; see [Running with a local model](#running-with-a-local-model) |
 | **`tessa-agent --offline`** | none | nothing |
@@ -103,7 +104,8 @@ Memory figures are rough: weights at Ollama's default 4-bit quantization plus th
 KV cache for a 32k-token window. Newer families with tool calling, such as Qwen
 3.5 and Gemma 4, are worth trying; check their sizes in the
 [Ollama library's Tools filter](https://ollama.com/search?c=tools) and pass the
-tag with `--model`. Any model without tool calling is refused before the run.
+tag with `--model`. On Ollama a model without tool calling is refused before the
+run; on LM Studio the check warns about one.
 
 **The context window is the setting that matters most.** The system prompt and
 tool definitions alone take about 8k tokens, and every tool result adds to them.
@@ -159,8 +161,10 @@ Ollama has no authentication, so do that on a trusted network only.
 
 ### LM Studio
 
-1. Install [LM Studio](https://lmstudio.ai) and download a model that supports
-   tool use, in the app or with `lms get <model>`.
+1. Install [LM Studio](https://lmstudio.ai) and download a model with native
+   tool use (the hammer badge in the app), in the app or with `lms get <model>`.
+   Other models get LM Studio's generic call format and produce more malformed
+   calls; the check before the run warns about them.
 2. Start the server and load the model with a 32k window. Load it explicitly:
    a model the server loads on demand gets the default context length.
 
@@ -175,6 +179,10 @@ Ollama has no authentication, so do that on a trusted network only.
    ```bash
    uv run tessa-agent ... --provider lmstudio --model <model>
    ```
+
+   If you turned on API authentication in LM Studio, export the token as
+   `LM_API_TOKEN`. The context window is read from LM Studio's `/api/v1` REST
+   API (LM Studio 0.4 and later), or from `/api/v0` on older versions.
 
 ### llama.cpp
 
@@ -217,25 +225,36 @@ server was started with `--api-key`, export the same key as `VLLM_API_KEY`.
 
 - **It checks the server before the first turn** (`tessa.ai.local.probe`): that
   it answers, that it has the model (with the command to get it), that the
-  model can call tools (Ollama), that the context window holds the prompt, and
-  whether the model spills onto the CPU (Ollama). It also warns when an Ollama
-  model is a cloud model, whose prompts do leave the machine. `--skip-check`
-  turns the check off.
+  model can call tools (Ollama refuses one that cannot; LM Studio warns), that
+  the context window leaves room for tool results after the prompt and a reply,
+  that the model is already loaded (LM Studio), and whether it spills onto the
+  CPU (Ollama). It also warns when an Ollama model is a cloud model, whose
+  prompts do leave the machine. `--skip-check` turns the check off.
 - **It keeps the conversation inside the window.** It reads the window from the
   server (Ollama, llama.cpp, vLLM, and LM Studio for a loaded model), or takes
   it from `--context-length`. Before a request would overflow, the oldest tool
   results are replaced by a short note telling the model to call the tool again
   if it needs the result; each new result is capped at half the room
   available, and a reply at a quarter of the window. `--context-length` turns
-  this on for any provider.
+  this on for any provider, but leave it off for Claude: its 1M-token window
+  does not need it, and newer Claude models (Opus 5.5, Sonnet 5.5, Haiku 5.5,
+  Fable 5.1) treat an edited earlier turn as invalid history.
 - **It recovers tool calls a server left in the text.** When the server does not
-  parse a model's call format, the call arrives as text, `<tool_call>{...}`
-  or a bare JSON object, and the run would end on its first turn. Such calls are
-  run anyway, with a warning, because they mean the server's tool-calling setup
-  needs fixing.
+  parse a model's call format, the call arrives as text (`<tool_call>{...}`,
+  LM Studio's `[TOOL_REQUEST]{...}[END_TOOL_REQUEST]`, or a bare JSON object)
+  and the run would end on its first turn. Such calls are run anyway, with a
+  warning, because they mean the server's tool-calling setup needs fixing.
 - **It samples at temperature 0.6** instead of 0: greedy decoding sends small
   models into repetition loops, and Ollama substitutes 1.0 when no temperature is
   sent. `--temperature` overrides it.
+- **It sends a reasoning model's reasoning back with its turn.** Qwen3 and
+  gpt-oss are built to see their earlier reasoning while they work through a
+  chain of tool calls. Servers return it outside the message text, as
+  `reasoning` (Ollama, vLLM) or `reasoning_content` (llama.cpp; LM Studio uses
+  either), and it goes back under the name it came with. When the window gets
+  tight, older turns' reasoning is dropped before any tool result is elided.
+  `-v` prints it as it arrives; `--no-reasoning-echo` stops sending it back,
+  for a server that rejects the field.
 - **A model call may take 30 minutes** and is not retried, since a retry would
   repeat the wait. `--timeout` changes the limit.
 - **A server that fails mid-run** (out of memory, restarted) ends the run with
@@ -249,11 +268,12 @@ server was started with `--api-key`, export the same key as `VLLM_API_KEY`.
 | `... runs <model> with a 4096-token context window` | the server's default window | the window settings above |
 | `does not serve 'qwen3:14b'` | the model is not downloaded | `ollama pull qwen3:14b`, or `--model` with one the message lists |
 | `cannot call tools` | the model has no tool calling | a model with the Tools tag |
-| warning `recovered N tool call(s) from the message text` | the server does not parse the model's calls | llama.cpp: `--jinja`; vLLM: `--enable-auto-tool-choice --tool-call-parser ...` |
+| warning `recovered N tool call(s) from the message text` | the server does not parse the model's calls | llama.cpp: `--jinja`; vLLM: `--enable-auto-tool-choice --tool-call-parser ...`; LM Studio: a model with native tool use |
 | the run ends after one turn, with JSON in the text | as above, in a format that cannot be recovered | as above |
 | `stopped: too_many_failures` | the model keeps sending invalid calls | a larger model; `-v` shows the calls and the hints it was given |
 | every turn takes minutes | the model runs partly or fully on the CPU | a smaller model or window, or `qwen3:30b` |
 | `stopped: backend_error` | the server ran out of memory or timed out | a smaller model or window; `--timeout` |
+| `backend_error` on the second turn, naming `reasoning` | the server rejects the reasoning sent back | `--no-reasoning-echo` |
 
 To check a setup end to end with a short real run:
 
@@ -473,9 +493,9 @@ version of this layer hand-wrote Anthropic schemas, re-serialized them for the
 OpenAI path, and duplicated the loop — and the copies drifted apart.
 
 Local servers need no backend of their own: they speak the OpenAI protocol, so a
-local preset is a base URL plus two switches on the OpenAI-compatible backend
-(text tool-call recovery, a non-zero temperature). What differs between servers
-is checked before the run, by `local.py`.
+local preset is a base URL plus three switches on the OpenAI-compatible backend
+(text tool-call recovery, a non-zero temperature, sending reasoning back). What
+differs between servers is checked before the run, by `local.py`.
 
 | Module | Role |
 |---|---|
@@ -503,13 +523,15 @@ is checked before the run, by `local.py`.
 - All tool results from one assistant turn are returned together; splitting them
   teaches a model to stop making parallel calls.
 - Arguments are always parsed as JSON, never string-matched.
-- Payloads are truncated to 20 KB before entering context.
-- Given a context window (`context_tokens`), the oldest tool results are
-  replaced by a short note before a request would overflow it, down to 60% of
-  the budget so that it happens rarely: each time changes the prompt prefix a
-  local server caches between turns. The opening message and the newest
-  results are never elided. Tokens are estimated at 3 characters each, on the
-  safe side for this JSON-heavy traffic.
+- Payloads are truncated to 20 KB before entering context, or to half the room
+  left in the context window when one is set.
+- Given a context window (`context_tokens`), the reasoning kept in older
+  assistant turns is dropped and then the oldest tool results are replaced by a
+  short note before a request would overflow it, down to 60% of the budget so
+  that it happens rarely: each time changes the prompt prefix a local server
+  caches between turns. The opening message, the newest reasoning and the
+  newest results are never removed. Tokens are estimated at 3 characters each,
+  on the safe side for this JSON-heavy traffic.
 - A model call that raises ends the run with `stopped_because="backend_error"`
   instead of an exception, so a server crash late in a run keeps what was done.
 
@@ -521,8 +543,8 @@ Everything above is tested with no credentials and no network — the sandbox
 against real escape attempts, session isolation, the tool surface end to end on
 synthetic data, schema derivation, both backend adapters against fake clients,
 the loop against a stub backend, and the local-server path (preflight checks,
-CLI runs through the real OpenAI SDK) against a fake server on 127.0.0.1 that
-answers like Ollama, LM Studio, llama.cpp or vLLM.
+CLI runs through the real OpenAI SDK, the reasoning round trip) against a fake
+server on 127.0.0.1 that answers like Ollama, LM Studio, llama.cpp or vLLM.
 
 ```bash
 uv run pytest -q                    # `live` tests are deselected by default

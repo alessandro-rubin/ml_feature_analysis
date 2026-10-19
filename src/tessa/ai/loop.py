@@ -2,9 +2,10 @@
 
 One loop, several backends. The old AI layer had the Groq variant import the
 system prompt and tool dispatcher from the Anthropic module but duplicate the
-loop itself; the two then drifted. Here every backend implements a three-line
-protocol and the loop owns everything else — turn capping, failure capping,
-argument parsing, result truncation, and the transcript.
+loop itself; the two then drifted. Here every backend implements a small
+protocol (see :class:`Backend`) and the loop owns everything else: turn
+capping, failure capping, argument parsing, result truncation, context
+compaction, and the transcript.
 
 Invariants worth naming, because they are the ones a hand-rolled loop gets wrong:
 
@@ -15,10 +16,11 @@ Invariants worth naming, because they are the ones a hand-rolled loop gets wrong
 * **Arguments are always parsed as JSON**, never string-matched. Models differ in
   how they escape strings inside tool arguments.
 * **A bounded context window is respected, not overrun.** Given
-  ``context_tokens``, the loop elides the oldest tool results before a request
-  would exceed it, and says so in their place. A local server does not
-  necessarily reject an oversized prompt: Ollama silently drops the oldest
-  messages, the opening one with the goal included.
+  ``context_tokens``, the loop drops older turns' reasoning and then elides the
+  oldest tool results before a request would exceed it, saying so in place of
+  each result. A local server does not necessarily reject an oversized prompt:
+  Ollama silently drops the oldest messages, the opening one with the goal
+  included.
 """
 
 from __future__ import annotations
@@ -83,14 +85,17 @@ class BackendTurn:
     usage: dict[str, Any] = field(default_factory=dict)
     raw: Any = None
     warnings: list[str] = field(default_factory=list)
+    reasoning: str = ""
 
 
 class Backend(Protocol):
     """The whole provider surface the loop depends on.
 
     A backend may also define ``result_slots(messages)``, returning a
-    ``(container, key)`` pair for each tool result's payload, oldest first. The
-    loop needs it only to compact the history for a bounded context window.
+    ``(container, key)`` pair for each tool result's payload, oldest first, and
+    ``reasoning_slots(messages)``, the same for reasoning kept in assistant
+    messages. The loop needs them only to compact the history for a bounded
+    context window.
     """
 
     name: str
@@ -176,17 +181,28 @@ class _ContextBudget:
     warned: bool = False
 
     def fit(self, backend: Backend, messages: list[dict], protect: int, emit) -> None:
-        """Elide the oldest tool results until ``messages`` fit the budget.
+        """Drop old reasoning, then elide the oldest tool results, until
+        ``messages`` fit the budget.
 
-        The newest ``protect`` results are never elided: the model has not
-        read them yet.
+        Reasoning goes first: it led to calls whose results are still there.
+        The newest reasoning and the newest ``protect`` results are kept: the
+        model is in the middle of acting on them.
         """
         size = len(json.dumps(messages, default=str))
         if size <= self.chars:
             return
+        target = self.chars * COMPACT_TO
+
+        thoughts = backend.reasoning_slots(messages) if hasattr(backend, "reasoning_slots") else []
+        dropped = 0
+        for container, key in thoughts[:-1]:
+            if size <= target:
+                break
+            size -= len(json.dumps(container.pop(key), default=str))
+            dropped += 1
+
         slots = backend.result_slots(messages) if hasattr(backend, "result_slots") else []
         candidates = slots[: len(slots) - protect] if protect else slots
-        target = self.chars * COMPACT_TO
         elided = 0
         for container, key in candidates:
             if size <= target:
@@ -197,12 +213,14 @@ class _ContextBudget:
             container[key] = ELIDED
             size -= len(payload) - len(ELIDED)
             elided += 1
+
         size = len(json.dumps(messages, default=str))
-        if elided:
+        if elided or dropped:
             emit(
                 "compact",
                 {
                     "elided": elided,
+                    "reasoning_dropped": dropped,
                     "estimated_tokens": math.ceil(size / CHARS_PER_TOKEN),
                     "budget_tokens": math.ceil(self.chars / CHARS_PER_TOKEN),
                 },
@@ -248,14 +266,16 @@ def run_loop(
         weaker model looping on a call it cannot get right.
     context_tokens : int, optional
         The model's context window. When given, the request is kept inside it,
-        less the backend's ``max_tokens`` reserved for the reply: the oldest
-        tool results are elided as needed, and each result is capped at half
-        the room the conversation has. Leave unset for a hosted model whose
-        window dwarfs a run.
+        less the backend's ``max_tokens`` reserved for the reply: older turns'
+        reasoning is dropped and then the oldest tool results are elided as
+        needed, and each result is capped at half the room the conversation
+        has. Leave unset for a hosted model whose window dwarfs a run.
     result_byte_cap : int
         Truncate each tool result to this many characters.
     on_event : callable, optional
-        Receives ``(kind, payload)`` for progress display.
+        Receives ``(kind, payload)`` for progress display. Kinds: ``text``,
+        ``reasoning``, ``tool``, ``result``, ``compact``, ``warning``, ``cap``
+        and ``error``.
 
     A model call that raises ends the run with ``stopped_because ==
     "backend_error"`` and the message in ``error``; the work done so far is
@@ -316,6 +336,8 @@ def run_loop(
                 usage_total[key] = usage_total.get(key, 0) + value
         for message in turn.warnings:
             emit("warning", {"message": message})
+        if turn.reasoning:
+            emit("reasoning", {"text": turn.reasoning})
 
         if turn.text:
             final_text = turn.text

@@ -266,7 +266,60 @@ def test_vllm_key_is_sent_and_a_rejection_names_it(server, monkeypatch):
     assert server.requests[-1]["headers"]["Authorization"] == "Bearer secret"
 
 
-def test_lmstudio_reads_the_loaded_context(server):
+def _lmstudio_v1(server: FakeServer, *entries: dict[str, Any]) -> None:
+    """LM Studio 0.4+: GET /api/v1/models, shaped as its documentation shows."""
+    server.route("GET", "/api/v1/models", {"models": list(entries)})
+
+
+def _lms_entry(key: str, *instances: tuple[str, int], tools: bool = True) -> dict[str, Any]:
+    return {
+        "type": "llm",
+        "key": key,
+        "loaded_instances": [
+            {"id": iid, "config": {"context_length": ctx, "parallel": 4}} for iid, ctx in instances
+        ],
+        "max_context_length": 262_144,
+        "capabilities": {"vision": False, "trained_for_tool_use": tools},
+    }
+
+
+def test_lmstudio_reads_the_loaded_instance_context(server):
+    server.models("qwen/qwen3-14b")
+    _lmstudio_v1(
+        server,
+        _lms_entry("google/gemma-4-26b-a4b"),
+        _lms_entry("qwen/qwen3-14b", ("qwen/qwen3-14b", 32_768)),
+    )
+    found = probe("lmstudio", base_url=server.base_url)
+    assert (found.model, found.context_length, found.warnings) == ("qwen/qwen3-14b", 32_768, [])
+    assert "/api/v0/models/qwen%2Fqwen3-14b" not in server.paths()
+
+
+def test_lmstudio_matches_a_custom_instance_identifier(server):
+    """`lms load <key> --identifier agent` serves the model as `agent`."""
+    server.models("agent")
+    _lmstudio_v1(server, _lms_entry("qwen/qwen3-14b", ("other", 8_192), ("agent", 40_960)))
+    assert probe("lmstudio", base_url=server.base_url).context_length == 40_960
+
+
+def test_lmstudio_v1_warns_when_the_model_is_not_loaded(server):
+    server.models("qwen/qwen3-14b")
+    _lmstudio_v1(server, _lms_entry("qwen/qwen3-14b"))
+    found = probe("lmstudio", base_url=server.base_url)
+    assert found.context_length is None
+    assert any("lms load qwen/qwen3-14b --context-length 32768" in w for w in found.warnings)
+
+
+def test_lmstudio_warns_about_a_model_not_trained_for_tools(server):
+    server.models("google/gemma-2-2b-it")
+    _lmstudio_v1(
+        server, _lms_entry("google/gemma-2-2b-it", ("google/gemma-2-2b-it", 32_768), tools=False)
+    )
+    found = probe("lmstudio", base_url=server.base_url)
+    assert any("not trained for tool use" in w for w in found.warnings)
+
+
+def test_lmstudio_before_0_4_reads_the_v0_api(server):
     server.models("qwen/qwen3-14b")
     server.route(
         "GET",
@@ -276,7 +329,7 @@ def test_lmstudio_reads_the_loaded_context(server):
     assert probe("lmstudio", base_url=server.base_url).context_length == 32_768
 
 
-def test_lmstudio_warns_when_the_model_is_not_loaded(server):
+def test_lmstudio_before_0_4_warns_when_the_model_is_not_loaded(server):
     server.models("qwen/qwen3-14b")
     server.route(
         "GET",
@@ -368,6 +421,41 @@ def test_cli_drives_a_local_server(server, tmp_path, capsys):
     assert len(first["tools"]) > 10
     assert second["messages"][-1]["role"] == "tool"
     assert second["messages"][-1]["tool_call_id"] == "call_1"
+
+
+@pytest.mark.parametrize("echo", [True, False])
+def test_cli_sends_a_reasoning_models_reasoning_back(server, tmp_path, echo):
+    """Through the real SDK: the server's `reasoning` field survives the round trip."""
+    pytest.importorskip("openai")
+    _ollama(server)
+    call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "describe_analysis", "arguments": '{"name": "pairwise"}'},
+    }
+    first_reply = {
+        "role": "assistant",
+        "content": None,
+        "reasoning": "Pairwise AUCs will show which classes overlap.",
+        "tool_calls": [call],
+    }
+    server.route(
+        "POST",
+        "/v1/chat/completions",
+        _scripted(
+            _completion(first_reply, "tool_calls"),
+            _completion({"role": "assistant", "content": "Report: done."}, "stop"),
+        ),
+    )
+
+    extra = () if echo else ("--no-reasoning-echo",)
+    assert _run_cli(server, tmp_path, *extra) == 0
+    _, second = _chat_requests(server)
+    assistant = next(m for m in second["messages"] if m["role"] == "assistant")
+    if echo:
+        assert assistant["reasoning"] == "Pairwise AUCs will show which classes overlap."
+    else:
+        assert "reasoning" not in assistant
 
 
 def test_cli_recovers_a_call_the_server_left_in_the_text(server, tmp_path, capsys):

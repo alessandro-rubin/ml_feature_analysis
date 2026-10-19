@@ -30,9 +30,10 @@ jupyter = ["jupyter"]
 dashboard = ["streamlit>=1.30"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 # The AI layer. `ai` covers the OpenAI-compatible drivers (Groq, OpenRouter,
-# OpenAI, a local server) and the MCP server — the paths that need no Anthropic
-# key. `ai-anthropic` adds the Claude driver. NOTE: in 0.2.0 the removed `[ai]`
-# extra meant the Anthropic path; the names now split along credential lines.
+# OpenAI, and the local servers Ollama, LM Studio, llama.cpp and vLLM) and the
+# MCP server: the paths that need no Anthropic key. `ai-anthropic` adds the
+# Claude driver. NOTE: in 0.2.0 the removed `[ai]` extra meant the Anthropic
+# path; the names now split along credential lines.
 ai = ["openai>=1.50.0", "mcp>=1.2.0", "python-dotenv>=1.0.0"]
 ai-anthropic = ["anthropic>=0.69.0"]
 all = [

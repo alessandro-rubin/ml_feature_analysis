@@ -2,9 +2,10 @@
 
 Kept separate from the OpenAI-compatible path so neither file mixes SDKs.
 
-Requires an API key. If you have a Claude subscription but no API key, the MCP
-server (``tessa-mcp``) is the route to use instead: Claude Desktop or Claude Code
-supplies the model and the agent loop, and drives exactly the same tools.
+Requires API credentials: ``ANTHROPIC_API_KEY``, ``ANTHROPIC_AUTH_TOKEN`` or an
+``ant auth login`` profile. If you have a Claude subscription but no API key, the
+MCP server (``tessa-mcp``) is the route to use instead: Claude Desktop or Claude
+Code supplies the model and the agent loop, and drives exactly the same tools.
 
 API notes, current as of writing:
 
@@ -16,6 +17,13 @@ API notes, current as of writing:
 * The cache breakpoint sits on the system block: render order is
   tools -> system -> messages, so tools and system must stay byte-stable and
   everything volatile goes in the first user message.
+* The history is only ever appended to, assistant turns verbatim
+  (``turn.raw.content``, thinking blocks included). Newer models (Claude Opus
+  5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1) bind thinking blocks to the
+  conversation that produced them: editing an earlier turn invalidates them,
+  and accounts created on or after 2026-08-31 get a 400. The loop's context
+  compaction (``run_loop(context_tokens=...)``) edits earlier tool results, so
+  leave it off here; Claude's 1M-token window does not need it.
 """
 
 from __future__ import annotations
@@ -108,7 +116,11 @@ class AnthropicBackend:
         )
 
     def result_slots(self, messages: list[dict]) -> list[tuple[dict, str]]:
-        """Where each tool result's payload sits in ``messages``, oldest first."""
+        """Where each tool result's payload sits in ``messages``, oldest first.
+
+        Only context compaction uses this, and it edits the history: see the
+        module docstring before combining it with a newer Claude model.
+        """
         return [
             (block, "content")
             for m in messages

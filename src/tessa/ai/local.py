@@ -4,20 +4,26 @@ A hosted API either answers or returns an error. A local server can be up and
 still be wrong in ways that only surface as a bad run many minutes later:
 
 * the model is not downloaded, or not the one being served;
-* the model cannot call tools;
+* the model cannot call tools (Ollama reports it; LM Studio reports whether the
+  model was trained for tool use);
+* the model is not loaded yet, so LM Studio will load it with its default
+  context length;
 * the context window is smaller than the prompt. Ollama defaults to 4k tokens
   on GPUs with less than 24 GiB of VRAM, and the system prompt plus the tool
   definitions alone take about twice that. Ollama does not reject an oversized
   prompt: it drops the oldest messages without an error, which cannot make room
   when the fixed part alone does not fit;
 * the model does not fit in VRAM and runs partly on the CPU, so every turn
-  takes minutes.
+  takes minutes;
+* the "local" model is an Ollama cloud model, so the data leaves the machine.
 
-:func:`probe` checks each of these through the server's own endpoints before
-the first turn and reports the context window, so that the loop can keep the
-conversation inside it (``run_loop(context_tokens=...)``). It uses only the
-standard library. On Ollama it loads the model, which the first turn would do
-anyway, because only a loaded model reports the window it was given.
+:func:`probe` checks these through each server's own endpoints, as far as that
+server exposes them, before the first turn. It reports the context window
+(Ollama ``/api/ps``, llama.cpp ``/props``, vLLM ``/v1/models``, LM Studio
+``/api/v1/models`` or ``/api/v0``) so that the loop can keep the conversation
+inside it (``run_loop(context_tokens=...)``). It uses only the standard
+library. On Ollama it loads the model, which the first turn would do anyway,
+because only a loaded model reports the window it was given.
 """
 
 from __future__ import annotations
@@ -244,17 +250,44 @@ def _llamacpp_context(root: str, model: str, **request: Any) -> int | None:
 
 
 def _lmstudio_context(root: str, model: str, warnings: list[str], **request: Any) -> int | None:
+    not_loaded = (
+        f"{model} is not loaded yet, so LM Studio will load it on the first request with "
+        f"its default context length. Load it first with:  lms load {model} "
+        "--context-length 32768"
+    )
+
+    # The native REST API since LM Studio 0.4. `model` is the model's key, or the
+    # identifier of one loaded instance (`lms load ... --identifier`).
+    listing = _optional(f"{root}/api/v1/models", **request)
+    if isinstance(listing, dict) and isinstance(listing.get("models"), list):
+        for entry in listing["models"]:
+            if not isinstance(entry, dict):
+                continue
+            instances = [i for i in entry.get("loaded_instances") or [] if isinstance(i, dict)]
+            if entry.get("key") != model and not any(i.get("id") == model for i in instances):
+                continue
+            if (entry.get("capabilities") or {}).get("trained_for_tool_use") is False:
+                warnings.append(
+                    f"{model} was not trained for tool use, so LM Studio prompts it with a "
+                    "generic call format; expect more malformed calls than from a model "
+                    "with native tool use (the hammer badge in LM Studio)."
+                )
+            instance = next((i for i in instances if i.get("id") == model), None)
+            instance = instance or (instances[0] if instances else None)
+            if instance is None:
+                warnings.append(not_loaded)
+                return None
+            return (instance.get("config") or {}).get("context_length") or None
+        return None
+
+    # LM Studio before 0.4: the v0 REST API.
     info = _optional(f"{root}/api/v0/models/{urllib.parse.quote(model, safe='')}", **request)
     if not isinstance(info, dict):
         return None
     if info.get("loaded_context_length"):
         return info["loaded_context_length"]
     if info.get("state") == "not-loaded":
-        warnings.append(
-            f"{model} is not loaded yet, so LM Studio will load it on the first request "
-            f"with its default context length. Load it first with:  lms load {model} "
-            "--context-length 32768"
-        )
+        warnings.append(not_loaded)
     return None
 
 
@@ -279,6 +312,9 @@ def probe(
     model : str, optional
         The model to run. Without one, the preset's default, or the only model
         the server serves.
+    api_key : str, optional
+        For a server started with a key. Defaults to the preset's environment
+        variable (``LM_API_TOKEN``, ``LLAMA_API_KEY``, ``VLLM_API_KEY``).
     timeout : float
         Seconds to wait for each metadata request.
     load_timeout : float
@@ -294,8 +330,9 @@ def probe(
     ------
     LocalServerError
         When the run could not work: no server, a missing model, a model that
-        cannot call tools, or a context window too small for the system prompt.
-        The message names the command that fixes it.
+        cannot call tools (Ollama), or a context window that leaves too little
+        room for tool results once the system prompt, the tool definitions and
+        a reply are paid for. The message names the command that fixes it.
     """
     spec = PROVIDERS.get(provider)
     if spec is None or not spec.local:

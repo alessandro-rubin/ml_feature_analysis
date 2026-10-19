@@ -237,6 +237,13 @@ def test_backend_warnings_are_passed_on():
     assert ("warning", {"message": "recovered 1 tool call"}) in events
 
 
+def test_reasoning_is_passed_on_for_display():
+    backend = StubBackend([BackendTurn(text="done", reasoning="weigh the pairs")])
+    events = []
+    run_loop(backend, "sys", "go", on_event=lambda k, p: events.append((k, p)))
+    assert ("reasoning", {"text": "weigh the pairs"}) in events
+
+
 # -- a bounded context window -------------------------------------------------
 
 
@@ -340,3 +347,46 @@ def test_a_window_too_small_for_the_prompt_warns_instead_of_crashing():
     )
     assert result.final_text == "done"
     assert "warning" in events
+
+
+@dataclass
+class ThinkingStub(SlottedStub):
+    """A stub that keeps each turn's reasoning in its assistant message."""
+
+    def append_turn(self, messages, turn):
+        super().append_turn(messages, turn)
+        if turn.reasoning:
+            messages[-1]["reasoning"] = turn.reasoning
+
+    def reasoning_slots(self, messages):
+        return [(m, "reasoning") for m in messages if "reasoning" in m]
+
+
+def test_old_reasoning_is_dropped_before_any_tool_result(monkeypatch):
+    """Reasoning led to calls whose results are still there; it is the cheaper loss."""
+    from tessa.ai import loop
+    from tessa.ai.loop import CHARS_PER_TOKEN, ELIDED
+
+    monkeypatch.setattr(loop.tool_module, "call_tool", lambda name, args: {"blob": "x" * 1_000})
+    turns = [
+        BackendTurn(reasoning="r" * 3_000, tool_calls=[_call(cid=f"c{i}")], stop_reason="tool_use")
+        for i in range(4)
+    ]
+    backend = ThinkingStub([*turns, BackendTurn(text="done")])
+    static = len("sys") + len(json.dumps(backend.tool_schemas()))
+    # Room for three turns with their reasoning, not four.
+    context = int((static + 12_000) / CHARS_PER_TOKEN)
+
+    events = []
+    run_loop(
+        backend, "sys", "go", context_tokens=context, on_event=lambda k, p: events.append((k, p))
+    )
+
+    compactions = [p for k, p in events if k == "compact"]
+    assert compactions and all(p["reasoning_dropped"] > 0 for p in compactions)
+    assert all(p["elided"] == 0 for p in compactions)
+    last_request = backend.seen_messages[-1]
+    assistant = [m for m in last_request if m.get("role") == "assistant"]
+    assert "reasoning" not in assistant[0], "the oldest reasoning goes first"
+    assert "reasoning" in assistant[-1], "the newest reasoning stays"
+    assert ELIDED not in _payloads(last_request)

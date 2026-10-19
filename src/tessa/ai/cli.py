@@ -182,6 +182,7 @@ def _build_backend(args: argparse.Namespace) -> tuple[Any, int | None]:
         temperature=args.temperature,
         max_tokens=max_tokens,
         timeout=args.timeout,
+        echo_reasoning=False if args.no_reasoning_echo else None,
     )
     return backend, context
 
@@ -205,9 +206,13 @@ def _on_event(verbose: bool):
             print(f"  [warning: {payload.get('message')}]")
         elif kind == "compact":
             print(
-                f"  [context: elided {payload['elided']} older tool result(s); about "
+                f"  [context: elided {payload['elided']} older tool result(s) and the "
+                f"reasoning of {payload['reasoning_dropped']} older turn(s); about "
                 f"{payload['estimated_tokens']} of {payload['budget_tokens']} tokens used]"
             )
+        elif kind == "reasoning" and verbose:
+            text = " ".join(payload.get("text", "").split())
+            print(f"  (reasoning: {text[:300]}{' ...' if len(text) > 300 else ''})")
 
     return emit
 
@@ -240,8 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--context-length",
         type=int,
-        help="The model's context window in tokens. Old tool results are elided to "
-        "stay inside it. Local servers report it themselves when they can.",
+        help="The model's context window in tokens. Older reasoning and tool results "
+        "are dropped to stay inside it. Local servers report it themselves when they "
+        "can. Leave it off for Claude, whose newer models reject edited history.",
     )
     parser.add_argument(
         "--max-tokens",
@@ -264,6 +270,12 @@ def main(argv: list[str] | None = None) -> int:
         "--skip-check",
         action="store_true",
         help="Do not check the local server before the run.",
+    )
+    parser.add_argument(
+        "--no-reasoning-echo",
+        action="store_true",
+        help="Do not send a reasoning model's reasoning back with its turn (local "
+        "servers do by default). For a server that rejects the field.",
     )
     parser.add_argument(
         "--offline",

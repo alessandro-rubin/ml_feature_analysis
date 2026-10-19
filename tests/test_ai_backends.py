@@ -26,8 +26,8 @@ from tessa.ai.loop import ToolCall
 # ── OpenAI-compatible ────────────────────────────────────────────────────────
 
 
-def _openai_response(content=None, tool_calls=(), finish="stop"):
-    message = types.SimpleNamespace(content=content, tool_calls=list(tool_calls))
+def _openai_response(content=None, tool_calls=(), finish="stop", **message_fields):
+    message = types.SimpleNamespace(content=content, tool_calls=list(tool_calls), **message_fields)
     choice = types.SimpleNamespace(message=message, finish_reason=finish)
     usage = types.SimpleNamespace(prompt_tokens=11, completion_tokens=3)
     return types.SimpleNamespace(choices=[choice], usage=usage)
@@ -124,6 +124,9 @@ NAMES = {"create_session", "build_events"}
         '```json\n{"name": "create_session", "arguments": {"data_root": "d"}}\n```',
         '[TOOL_CALLS][{"name": "create_session", "arguments": {"data_root": "d"}}]',
         '<|python_tag|>{"name": "create_session", "parameters": {"data_root": "d"}}',
+        # LM Studio's format for models without a tool-calling template.
+        '[TOOL_REQUEST]{"name": "create_session", "arguments": {"data_root": "d"}}'
+        "[END_TOOL_REQUEST]",
         '{"name": "create_session", "arguments": "{\\"data_root\\": \\"d\\"}"}',
     ],
 )
@@ -186,6 +189,44 @@ def test_local_backend_turns_text_calls_into_tool_calls():
     sent = messages[0]["tool_calls"][0]
     assert sent["id"] == "text_call_1"
     assert json.loads(sent["function"]["arguments"]) == {"session_id": "s1"}
+
+
+@pytest.mark.parametrize("field", ["reasoning", "reasoning_content"])
+def test_reasoning_goes_back_under_the_name_it_arrived_with(field):
+    """Ollama and vLLM say `reasoning`, llama.cpp `reasoning_content`; each reads its own."""
+    call = _fn_call("c1", "build_events", '{"session_id": "s1"}')
+    client = FakeOpenAIClient(_openai_response(tool_calls=[call], **{field: " weigh it "}))
+    backend = OpenAICompatibleBackend(model="m", client=client, echo_reasoning=True)
+    turn = backend.complete("sys", [], backend.tool_schemas())
+    assert turn.reasoning == "weigh it"
+
+    messages: list[dict] = []
+    backend.append_turn(messages, turn)
+    assert messages[0][field] == "weigh it"
+    assert [f for f in ("reasoning", "reasoning_content") if f in messages[0]] == [field]
+    assert [c[k] for c, k in backend.reasoning_slots(messages)] == ["weigh it"]
+
+
+def test_reasoning_is_shown_but_not_sent_back_unless_enabled():
+    call = _fn_call("c1", "build_events", '{"session_id": "s1"}')
+    client = FakeOpenAIClient(_openai_response(tool_calls=[call], reasoning="weigh it"))
+    backend = OpenAICompatibleBackend(model="m", client=client)
+    turn = backend.complete("sys", [], backend.tool_schemas())
+    assert turn.reasoning == "weigh it"
+
+    messages: list[dict] = []
+    backend.append_turn(messages, turn)
+    assert "reasoning" not in messages[0]
+    assert backend.reasoning_slots(messages) == []
+
+
+def test_reasoning_echo_is_on_for_local_presets_only(monkeypatch):
+    pytest.importorskip("openai")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+    assert build_backend(provider="ollama").echo_reasoning is True
+    assert build_backend(provider="ollama", echo_reasoning=False).echo_reasoning is False
+    # Some hosted providers reject message fields they do not know.
+    assert build_backend(provider="groq").echo_reasoning is False
 
 
 def test_a_reply_cut_off_before_any_call_is_flagged():

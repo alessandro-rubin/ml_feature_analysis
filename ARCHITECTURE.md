@@ -387,7 +387,7 @@ usable — and testable — with none of it installed.
 
 ```
 tools.py ── plain functions, no SDK ──┬── mcp_server.py   (any MCP client)
-                                      └── schemas.py ──┬── backend_openai.py
+                                      └── schemas.py ──┬── backend_openai.py ── local.py (preflight)
                                                        └── backend_anthropic.py
                                                             └── loop.py
 ```
@@ -430,8 +430,8 @@ Consequences that had to be handled rather than designed around:
 - A local model's context window can be smaller than a run, and a local server
   does not necessarily reject an overflow (Ollama drops the oldest messages
   silently). `local.py` checks the window before the first turn, and the loop
-  keeps the history inside it by eliding the oldest tool results, with a note
-  in their place.
+  keeps the history inside it by dropping older turns' reasoning and then
+  eliding the oldest tool results, with a note in their place.
 
 The sandbox's threat model, the tool reference and the expression language are
 documented in [AI_INTEGRATION.md](AI_INTEGRATION.md).
