@@ -6,8 +6,9 @@ Three modes:
   tool, both registries, the expression compiler, the column budget and the
   truncation layer — for free, with no credential. Use it to verify an install or
   to debug a tool before spending tokens.
-* ``--provider groq|openrouter|openai|local`` drives the tools with an
-  OpenAI-compatible model.
+* ``--provider groq|openrouter|openai`` drives the tools with a hosted
+  OpenAI-compatible model, and ``--provider ollama|lmstudio|llamacpp|vllm`` with
+  a model on a local server, which is checked before the first turn.
 * ``--provider anthropic`` drives them with Claude, and needs an API key.
 """
 
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from tessa.ai import tools
+from tessa.ai.backend_openai import DEFAULT_MAX_TOKENS, PROVIDERS
 from tessa.ai.loop import run_loop
 from tessa.ai.prompts import opening_message, system_prompt
 
@@ -147,14 +149,41 @@ def run_offline_script(data_root: str, labels_path: str | None, verbose: bool = 
     return 1 if failures else 0
 
 
-def _build_backend(args: argparse.Namespace) -> Any:
+def _build_backend(args: argparse.Namespace) -> tuple[Any, int | None]:
+    """The backend, and the context window to keep the conversation inside."""
     if args.provider == "anthropic":
         from tessa.ai.backend_anthropic import build_backend
 
-        return build_backend(model=args.model or "claude-opus-5", effort=args.effort)
+        backend = build_backend(model=args.model or "claude-opus-5", effort=args.effort)
+        return backend, args.context_length
     from tessa.ai.backend_openai import build_backend
 
-    return build_backend(provider=args.provider, model=args.model, base_url=args.base_url)
+    model, context = args.model, args.context_length
+    if PROVIDERS[args.provider].local and not args.skip_check:
+        from tessa.ai.local import probe
+
+        print(f"Checking the {args.provider} server ...")
+        found = probe(args.provider, base_url=args.base_url, model=model)
+        model = found.model
+        if context is None and found.context_length:
+            context = found.context_length
+            print(f"  context window: {context} tokens ({found.context_source})")
+        for warning in found.warnings:
+            print(f"  warning: {warning}")
+
+    max_tokens = args.max_tokens
+    if context:
+        # A reply may fill at most a quarter of the window; the rest is the conversation's.
+        max_tokens = min(max_tokens or DEFAULT_MAX_TOKENS, context // 4)
+    backend = build_backend(
+        provider=args.provider,
+        model=model,
+        base_url=args.base_url,
+        temperature=args.temperature,
+        max_tokens=max_tokens,
+        timeout=args.timeout,
+    )
+    return backend, context
 
 
 def _on_event(verbose: bool):
@@ -172,6 +201,13 @@ def _on_event(verbose: bool):
             print(f"  [loop stopped: {payload}]")
         elif kind == "error":
             print(f"  [error: {payload.get('message')}]")
+        elif kind == "warning":
+            print(f"  [warning: {payload.get('message')}]")
+        elif kind == "compact":
+            print(
+                f"  [context: elided {payload['elided']} older tool result(s); about "
+                f"{payload['estimated_tokens']} of {payload['budget_tokens']} tokens used]"
+            )
 
     return emit
 
@@ -192,13 +228,43 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--provider",
         default="groq",
-        choices=["groq", "openrouter", "openai", "local", "anthropic"],
-        help="Which model provider to drive the tools with (default: groq)",
+        choices=[*PROVIDERS, "anthropic"],
+        help="Which model provider to drive the tools with (default: groq). "
+        "ollama, lmstudio, llamacpp and vllm are local servers; local is an alias "
+        "of ollama.",
     )
     parser.add_argument("--model", help="Override the provider's default model")
     parser.add_argument("--base-url", help="Override the provider's base URL")
     parser.add_argument("--effort", default="high", help="Anthropic effort level")
     parser.add_argument("--max-turns", type=int, default=40)
+    parser.add_argument(
+        "--context-length",
+        type=int,
+        help="The model's context window in tokens. Old tool results are elided to "
+        "stay inside it. Local servers report it themselves when they can.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        help=f"Cap on each reply (default {DEFAULT_MAX_TOKENS}, at most a quarter of "
+        "the context window). OpenAI-compatible providers only.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        help="Sampling temperature (default 0 for hosted providers, 0.6 for local "
+        "servers). OpenAI-compatible providers only.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        help="Seconds one model call may take (default 1800 for local servers).",
+    )
+    parser.add_argument(
+        "--skip-check",
+        action="store_true",
+        help="Do not check the local server before the run.",
+    )
     parser.add_argument(
         "--offline",
         action="store_true",
@@ -225,13 +291,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--goal is required unless --offline is set")
 
     try:
-        backend = _build_backend(args)
+        backend, context = _build_backend(args)
     except RuntimeError as exc:
         print(f"\n{exc}\n", file=sys.stderr)
         return 2
 
     print(_RULE)
     print(f"  provider: {backend.name}   model: {backend.model}")
+    if context:
+        print(f"  context window: {context} tokens")
     print(f"  goal: {args.goal}")
     print(_RULE)
 
@@ -240,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         system_prompt(),
         opening_message(args.goal, args.data_root, args.labels),
         max_turns=args.max_turns,
+        context_tokens=context,
         on_event=_on_event(args.verbose),
     )
 
@@ -247,10 +316,12 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"  {result.turns} turns, {result.tool_calls} tool calls, stopped: {result.stopped_because}"
     )
+    if result.error:
+        print(f"  error: {result.error}")
     if result.usage:
         print(f"  usage: {json.dumps(result.usage)}")
     print(_RULE)
-    return 0
+    return 1 if result.error else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

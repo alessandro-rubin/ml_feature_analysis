@@ -14,21 +14,52 @@ Invariants worth naming, because they are the ones a hand-rolled loop gets wrong
   avoid a bug rather than fixing it.
 * **Arguments are always parsed as JSON**, never string-matched. Models differ in
   how they escape strings inside tool arguments.
+* **A bounded context window is respected, not overrun.** Given
+  ``context_tokens``, the loop elides the oldest tool results before a request
+  would exceed it, and says so in their place. A local server does not
+  necessarily reject an oversized prompt: Ollama silently drops the oldest
+  messages, the opening one with the goal included.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
 from tessa.ai import tools as tool_module
 from tessa.ai.render import BYTE_CAP
 
-__all__ = ["ToolCall", "BackendTurn", "Backend", "AgentResult", "run_loop"]
+__all__ = [
+    "ToolCall",
+    "BackendTurn",
+    "Backend",
+    "AgentResult",
+    "ELIDED",
+    "estimate_tokens",
+    "run_loop",
+]
 
 MAX_TURNS = 40
 MAX_CONSECUTIVE_FAILURES = 5
+
+# Characters per token for budgeting without a tokenizer. Real tokenizers give
+# 3-4 on this JSON-heavy traffic; the low end keeps estimates on the safe side.
+CHARS_PER_TOKEN = 3.0
+# Compaction elides results until the conversation is back under this fraction
+# of its budget, so that it runs rarely: each run changes the prompt prefix a
+# local server would otherwise reuse from its cache.
+COMPACT_TO = 0.6
+# The smallest per-result cap a context budget can impose.
+MIN_RESULT_BYTES = 2_000
+
+ELIDED = json.dumps(
+    {
+        "elided": "This older tool result was removed to fit the context window. "
+        "Call the tool again if you still need it."
+    }
+)
 
 
 @dataclass
@@ -51,10 +82,16 @@ class BackendTurn:
     stop_reason: str = ""
     usage: dict[str, Any] = field(default_factory=dict)
     raw: Any = None
+    warnings: list[str] = field(default_factory=list)
 
 
 class Backend(Protocol):
-    """The whole provider surface the loop depends on."""
+    """The whole provider surface the loop depends on.
+
+    A backend may also define ``result_slots(messages)``, returning a
+    ``(container, key)`` pair for each tool result's payload, oldest first. The
+    loop needs it only to compact the history for a bounded context window.
+    """
 
     name: str
     model: str
@@ -82,6 +119,12 @@ class AgentResult:
     transcript: list[dict[str, Any]]
     stopped_because: str
     usage: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
+
+
+def estimate_tokens(text: str) -> int:
+    """A deliberately pessimistic token count, for budgeting without a tokenizer."""
+    return math.ceil(len(text) / CHARS_PER_TOKEN)
 
 
 def parse_arguments(raw: Any) -> tuple[dict[str, Any], str | None]:
@@ -105,7 +148,7 @@ def _truncate(payload: str, cap: int = BYTE_CAP) -> str:
     return payload[:cap] + f'... [truncated at {cap} bytes; use get_result for more]"'
 
 
-def _execute(call: ToolCall) -> tuple[str, bool]:
+def _execute(call: ToolCall, cap: int = BYTE_CAP) -> tuple[str, bool]:
     """Run one tool call, returning its serialized result and whether it failed."""
     if call.parse_error:
         return (
@@ -122,7 +165,58 @@ def _execute(call: ToolCall) -> tuple[str, bool]:
         )
     result = tool_module.call_tool(call.name, call.arguments)
     failed = isinstance(result, dict) and "error" in result
-    return _truncate(json.dumps(result, default=str)), failed
+    return _truncate(json.dumps(result, default=str), cap), failed
+
+
+@dataclass
+class _ContextBudget:
+    """How much of a bounded context window the conversation may fill."""
+
+    chars: int
+    warned: bool = False
+
+    def fit(self, backend: Backend, messages: list[dict], protect: int, emit) -> None:
+        """Elide the oldest tool results until ``messages`` fit the budget.
+
+        The newest ``protect`` results are never elided: the model has not
+        read them yet.
+        """
+        size = len(json.dumps(messages, default=str))
+        if size <= self.chars:
+            return
+        slots = backend.result_slots(messages) if hasattr(backend, "result_slots") else []
+        candidates = slots[: len(slots) - protect] if protect else slots
+        target = self.chars * COMPACT_TO
+        elided = 0
+        for container, key in candidates:
+            if size <= target:
+                break
+            payload = container[key]
+            if not isinstance(payload, str) or payload == ELIDED:
+                continue
+            container[key] = ELIDED
+            size -= len(payload) - len(ELIDED)
+            elided += 1
+        size = len(json.dumps(messages, default=str))
+        if elided:
+            emit(
+                "compact",
+                {
+                    "elided": elided,
+                    "estimated_tokens": math.ceil(size / CHARS_PER_TOKEN),
+                    "budget_tokens": math.ceil(self.chars / CHARS_PER_TOKEN),
+                },
+            )
+        if size > self.chars and not self.warned:
+            self.warned = True
+            emit(
+                "warning",
+                {
+                    "message": "the conversation is over its context budget even with "
+                    "every older tool result elided; the server may truncate it. Use a "
+                    "larger context window."
+                },
+            )
 
 
 def run_loop(
@@ -132,6 +226,8 @@ def run_loop(
     *,
     max_turns: int = MAX_TURNS,
     max_consecutive_failures: int = MAX_CONSECUTIVE_FAILURES,
+    context_tokens: int | None = None,
+    result_byte_cap: int = BYTE_CAP,
     on_event: Callable[[str, dict], None] | None = None,
 ) -> AgentResult:
     """Drive a backend until it stops calling tools.
@@ -150,8 +246,20 @@ def run_loop(
     max_consecutive_failures : int
         Give up after this many consecutive failing turns — the guard against a
         weaker model looping on a call it cannot get right.
+    context_tokens : int, optional
+        The model's context window. When given, the request is kept inside it,
+        less the backend's ``max_tokens`` reserved for the reply: the oldest
+        tool results are elided as needed, and each result is capped at half
+        the room the conversation has. Leave unset for a hosted model whose
+        window dwarfs a run.
+    result_byte_cap : int
+        Truncate each tool result to this many characters.
     on_event : callable, optional
         Receives ``(kind, payload)`` for progress display.
+
+    A model call that raises ends the run with ``stopped_because ==
+    "backend_error"`` and the message in ``error``; the work done so far is
+    still returned.
     """
     emit = on_event or (lambda kind, payload: None)
     schemas = backend.tool_schemas()
@@ -159,24 +267,55 @@ def run_loop(
     transcript: list[dict[str, Any]] = []
     usage_total: dict[str, Any] = {}
 
+    budget: _ContextBudget | None = None
+    if context_tokens:
+        reserve = getattr(backend, "max_tokens", 0) or 0
+        static = len(system) + len(json.dumps(schemas, default=str))
+        room = int((context_tokens - reserve) * CHARS_PER_TOKEN) - static
+        if room > 0:
+            budget = _ContextBudget(room)
+            result_byte_cap = max(MIN_RESULT_BYTES, min(result_byte_cap, room // 2))
+        else:
+            emit(
+                "warning",
+                {
+                    "message": f"a {context_tokens}-token context cannot hold the system "
+                    f"prompt and tool definitions (about {math.ceil(static / CHARS_PER_TOKEN)} "
+                    f"tokens) plus a {reserve}-token reply."
+                },
+            )
+
     turns = 0
     n_tool_calls = 0
     consecutive_failures = 0
     final_text = ""
     stopped = "end_turn"
+    error = ""
+    last_batch = 0
 
     while True:
+        if budget is not None:
+            budget.fit(backend, messages, last_batch, emit)
+
         if turns >= max_turns:
             stopped = "max_turns"
             emit("cap", {"turns": turns})
             final_text = _wrap_up(backend, system, messages, emit) or final_text
             break
 
-        turn = backend.complete(system, messages, schemas)
+        try:
+            turn = backend.complete(system, messages, schemas)
+        except Exception as exc:  # a dead server must not discard the run so far
+            error = f"{type(exc).__name__}: {exc}"
+            stopped = "backend_error"
+            emit("error", {"message": f"model call failed: {error}"})
+            break
         turns += 1
         for key, value in (turn.usage or {}).items():
             if isinstance(value, (int, float)):
                 usage_total[key] = usage_total.get(key, 0) + value
+        for message in turn.warnings:
+            emit("warning", {"message": message})
 
         if turn.text:
             final_text = turn.text
@@ -199,7 +338,7 @@ def run_loop(
         turn_failed = True
         for call in turn.tool_calls:
             emit("tool", {"name": call.name, "arguments": call.arguments})
-            payload, failed = _execute(call)
+            payload, failed = _execute(call, result_byte_cap)
             n_tool_calls += 1
             if not failed:
                 turn_failed = False
@@ -209,11 +348,14 @@ def run_loop(
 
         # All results from one assistant turn go back in one message.
         backend.append_results(messages, results)
+        last_batch = len(results)
 
         consecutive_failures = consecutive_failures + 1 if turn_failed else 0
         if consecutive_failures >= max_consecutive_failures:
             stopped = "too_many_failures"
             emit("cap", {"consecutive_failures": consecutive_failures})
+            if budget is not None:
+                budget.fit(backend, messages, last_batch, emit)
             final_text = _wrap_up(backend, system, messages, emit) or final_text
             break
 
@@ -224,6 +366,7 @@ def run_loop(
         transcript=transcript,
         stopped_because=stopped,
         usage=usage_total,
+        error=error,
     )
 
 

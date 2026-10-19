@@ -235,9 +235,16 @@ Three ways to drive it, two of which need no Anthropic key:
 ```bash
 uv run tessa-agent --data-root ./demo_data --make-demo --offline   # no model at all
 uv run tessa-agent --data-root data --labels labels.xlsx \
-  --goal "What separates TP from FP?" --provider groq             # Groq/OpenRouter/OpenAI/local
+  --goal "What separates TP from FP?" --provider groq             # Groq/OpenRouter/OpenAI
 uv run tessa-mcp                                                   # any MCP client
 ```
+
+The agent also runs on a model on your own machine, with no key and nothing
+leaving it: `--provider ollama` (or `lmstudio`, `llamacpp`, `vllm`). The server
+is checked before the first turn, notably for a context window large enough for
+the prompt, which Ollama's default is not; see
+[Running with a local model](AI_INTEGRATION.md#running-with-a-local-model) for
+the setup.
 
 `tessa-mcp` exposes the same tools over the Model Context Protocol, so Claude
 Desktop, Claude Code, Cline or Zed can drive them using their own model — no API

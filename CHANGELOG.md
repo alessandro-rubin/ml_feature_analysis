@@ -52,6 +52,32 @@
   default `drop_rows` policy discard every event.
 
 ### Added
+- **Local models for the agent loop.** `tessa-agent --provider ollama`,
+  `lmstudio`, `llamacpp` or `vllm` drives the tools with a model on your own
+  machine: no API key, and no data leaves it. Setup instructions for each server
+  are in AI_INTEGRATION.md, "Running with a local model".
+  - `tessa.ai.local.probe` checks the server before the first turn: that it
+    answers, that it has the model (naming the command to get it), that the
+    model can call tools (Ollama), and that the context window can hold the
+    system prompt and tool definitions (about 8k tokens). Ollama's default
+    window below 24 GiB of VRAM is 4k, so the most common setup is refused with
+    the fix instead of running in a window that cannot work. It also reads the
+    window for the loop, and warns about CPU offload and Ollama cloud models.
+    `--skip-check` turns it off.
+  - `run_loop(context_tokens=...)` / `--context-length` keeps the conversation
+    inside a bounded window: the oldest tool results are replaced by a note
+    telling the model to call the tool again, and each result is capped at
+    half the room left. Both backends implement the `result_slots` hook
+    this needs.
+  - The OpenAI-compatible backend can recover tool calls a server left in the
+    message text (`<tool_call>` blocks, bare JSON), with a warning; local
+    presets turn this on.
+  - New CLI options: `--context-length`, `--max-tokens`, `--temperature`,
+    `--timeout`, `--skip-check`.
+  - `TESSA_LIVE_LOCAL=<server>` runs the opt-in live test against a local server.
+- A model call that raises now ends `run_loop` with
+  `stopped_because="backend_error"` and the message in `AgentResult.error`,
+  keeping the turns already done; `tessa-agent` exits with code 1.
 - `tessa.dataset.builder.build` and `Dataset.events` accept the loader's
   `merge`, `on_duplicate`, `source_order`, `asof_strategy` and `asof_tolerance`
   options (keyword-only, same defaults as `asset_loader.load_event`), e.g.
@@ -59,6 +85,11 @@
   to put slower sources onto the fast grid.
 
 ### Changed
+- `--provider local` is now an alias of `ollama`: its default model is
+  `qwen3:14b` (was `qwen2.5:14b`), and like every local preset it samples at
+  temperature 0.6 (was 0), allows 30 minutes per model call and does not retry.
+  Greedy decoding sends small models into repetition loops, and Ollama's OpenAI
+  endpoint uses 1.0 when no temperature is sent.
 - The template notebook no longer drops all-null feature columns by hand nor
   switches to `NullPolicy("drop_features")`; with the fixes above the defaults
   keep every event of the example data.
