@@ -65,6 +65,7 @@ class _Hints:
     start: str
     get_model: str
     set_context: str
+    elsewhere: str = "or pass --base-url if it listens elsewhere."
 
 
 _HINTS: dict[str, _Hints] = {
@@ -86,6 +87,8 @@ _HINTS: dict[str, _Hints] = {
         start="llama-server -m <model.gguf> --jinja -c 32768 -np 1",
         get_model="restart llama-server with  -m <model.gguf>  or  -hf <user>/<repo>",
         set_context="restart llama-server with  -c 32768 -np 1",
+        elsewhere="or pass --base-url if it listens elsewhere: older builds use port "
+        "8080 (--base-url http://localhost:8080/v1).",
     ),
     "vllm": _Hints(
         label="vLLM",
@@ -362,7 +365,7 @@ def probe(
         raise LocalServerError(
             f"No {hints.label} server is answering at {base} ({reason}). Start it with:\n"
             f"  {hints.start}\n"
-            "or pass --base-url if it listens elsewhere."
+            f"{hints.elsewhere}"
         ) from exc
     except ValueError as exc:
         raise LocalServerError(f"{base}/models did not return JSON; is it {hints.label}?") from exc

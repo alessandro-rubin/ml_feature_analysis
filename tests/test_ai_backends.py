@@ -140,6 +140,48 @@ def test_recover_tool_calls_reads_the_common_text_formats(text):
     assert remaining == ""
 
 
+QWEN_XML = (
+    "<tool_call>\n<function=create_session>\n<parameter=data_root>\nd\n</parameter>\n"
+    "</function>\n</tool_call>"
+)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        QWEN_XML,
+        # The same call without the wrapper, as some servers leave it.
+        "<function=create_session>\n<parameter=data_root>\nd\n</parameter>\n</function>",
+    ],
+)
+def test_recover_tool_calls_reads_the_qwen_xml_format(text):
+    """Qwen3-Coder's format, which Qwen3.5 and Qwen3.6 use too."""
+    calls, remaining = recover_tool_calls(text, NAMES)
+    assert calls == [{"name": "create_session", "arguments": {"data_root": "d"}}]
+    assert remaining == ""
+
+
+def test_xml_parameters_follow_the_tool_schema_types():
+    """XML values are text: a string parameter stays a string even if it looks numeric."""
+    text = (
+        "<tool_call><function=build_events><parameter=session_id>12345678</parameter>"
+        "<parameter=max_events>50</parameter><parameter=sources>"
+        '["a", "b"]</parameter></function></tool_call>'
+    )
+    types = {"build_events": {"session_id": "string", "max_events": "integer"}}
+    calls, _ = recover_tool_calls(text, NAMES, types)
+    assert calls[0]["arguments"] == {
+        "session_id": "12345678",
+        "max_events": 50,
+        "sources": ["a", "b"],
+    }
+
+
+def test_xml_calls_to_unknown_tools_are_left_alone():
+    text = "<tool_call><function=rm_rf><parameter=path>/</parameter></function></tool_call>"
+    assert recover_tool_calls(text, NAMES) == ([], text)
+
+
 def test_recover_tool_calls_keeps_the_prose_around_tagged_calls():
     text = (
         "Let me start.\n"
@@ -278,6 +320,8 @@ def test_local_presets_cover_the_common_servers():
     # `local` predates the presets and keeps meaning Ollama.
     assert PROVIDERS["local"].server == "ollama"
     assert PROVIDERS["local"].base_url == PROVIDERS["ollama"].base_url
+    # llama-server's current default port (older builds: 8080).
+    assert PROVIDERS["llamacpp"].base_url == "http://localhost:9931/v1"
 
 
 def test_hosted_providers_still_decode_greedily():

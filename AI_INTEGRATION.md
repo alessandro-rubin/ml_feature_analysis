@@ -191,17 +191,19 @@ llama.cpp` (Windows), or a [release binary](https://github.com/ggml-org/llama.cp
 then start the server on a GGUF file or a Hugging Face repository:
 
 ```bash
-llama-server -hf ggml-org/gpt-oss-20b-GGUF --jinja -c 32768 -np 1 --port 8080
+llama-server -hf ggml-org/gpt-oss-20b-GGUF --jinja -c 32768 -np 1
 # or a file you already have:
-llama-server -m ./model.gguf --jinja -c 32768 -np 1 --port 8080
+llama-server -m ./model.gguf --jinja -c 32768 -np 1
 
 uv run tessa-agent ... --provider llamacpp
 ```
 
 `--jinja` (the default in recent builds) is what makes the server parse tool
 calls; `-np 1` gives the whole window to one conversation instead of splitting
-it between parallel slots. If the server was started with `--api-key`, export
-the same key as `LLAMA_API_KEY`.
+it between parallel slots. The preset expects llama-server's default port,
+9931; builds from before that default listened on 8080, so for one of those
+pass `--base-url http://localhost:8080/v1`. If the server was started with
+`--api-key`, export the same key as `LLAMA_API_KEY`.
 
 ### vLLM
 
@@ -241,6 +243,7 @@ server was started with `--api-key`, export the same key as `VLLM_API_KEY`.
   Fable 5.1) treat an edited earlier turn as invalid history.
 - **It recovers tool calls a server left in the text.** When the server does not
   parse a model's call format, the call arrives as text (`<tool_call>{...}`,
+  the `<function=...><parameter=...>` XML of Qwen3-Coder, Qwen3.5 and Qwen3.6,
   LM Studio's `[TOOL_REQUEST]{...}[END_TOOL_REQUEST]`, or a bare JSON object)
   and the run would end on its first turn. Such calls are run anyway, with a
   warning, because they mean the server's tool-calling setup needs fixing.

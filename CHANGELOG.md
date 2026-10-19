@@ -87,6 +87,12 @@
     check warns about a model LM Studio marks as not trained for tool use, the
     `lmstudio` preset sends `LM_API_TOKEN` when it is set, and LM Studio's
     `[TOOL_REQUEST]...[END_TOOL_REQUEST]` call format is recovered from text.
+  - The Qwen3-Coder XML call format (`<function=name><parameter=key>value
+    </parameter></function>`, also used by Qwen3.5 and Qwen3.6) is recovered
+    from text, with parameter values typed by the tool's schema.
+  - The `llamacpp` preset expects port 9931, llama-server's current default
+    (it assumed 8080, the default of older builds, so a server started
+    without `--port` was reported as not running).
 - A model call that raises now ends `run_loop` with
   `stopped_because="backend_error"` and the message in `AgentResult.error`,
   keeping the turns already done; `tessa-agent` exits with code 1.
